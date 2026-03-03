@@ -10,29 +10,53 @@ Mục tiêu chính của dự án là xây dựng một pipeline xử lý dữ l
 
 ## 📊 Dữ liệu:
 
-- Nguồn: Open-Meteo
-- Vị trí:
-    <div align="center">
+- **Nguồn:** Open-Meteo Weather API
+- **Vị trí:**
 
-  | STT | Tỉnh       |  Kinh độ  |   Vĩ độ   |
-  | :-: | :--------- | :-------: | :-------: |
-  | 01  | An Giang   | Giá trị 2 | Giá trị 3 |
-  | 02  | Bạc Liêu   | Giá trị 2 | Giá trị 3 |
-  | 03  | Bến Tre    | Giá trị 5 | Giá trị 6 |
-  | 04  | Cà Mau     | Giá trị 2 | Giá trị 3 |
-  | 05  | Cần Thơ    | Giá trị 5 | Giá trị 6 |
-  | 06  | Đồng Tháp  | Giá trị 2 | Giá trị 3 |
-  | 07  | Hậu Giang  | Giá trị 5 | Giá trị 6 |
-  | 08  | Kiên Giang | Giá trị 5 | Giá trị 6 |
-  | 09  | Long An    | Giá trị 2 | Giá trị 3 |
-  | 10  | Tiền Giang | Giá trị 5 | Giá trị 6 |
-  | 11  | Trà Vinh   | Giá trị 5 | Giá trị 6 |
-  | 12  | Vĩnh Long  | Giá trị 5 | Giá trị 6 |
-  | 13  | Sóc Trăng  | Giá trị 5 | Giá trị 6 |
+  <div align="center">
 
-    </p>
+  | STT | Tỉnh       | Kinh độ (lon) | Vĩ độ (lat) |
+  | :-: | :--------- | :-----------: | :---------: |
+  | 01  | Cà Mau     |   104.9826    |   9.0851    |
+  | 02  | Bạc Liêu   |   105.4168    |   9.2916    |
+  | 03  | Sóc Trăng  |   105.8827    |   9.5064    |
+  | 04  | Hậu Giang  |   105.5985    |   9.7735    |
+  | 05  | Trà Vinh   |   106.2405    |   9.8082    |
+  | 06  | Kiên Giang |   105.0969    |   9.8460    |
+  | 07  | Vĩnh Long  |   105.9318    |   10.1317   |
+  | 08  | Bến Tre    |   106.4671    |   10.1491   |
+  | 09  | Cần Thơ    |   105.4432    |   10.1765   |
+  | 10  | Tiền Giang |   106.1655    |   10.3960   |
+  | 11  | An Giang   |   104.8877    |   10.4355   |
+  | 12  | Đồng Tháp  |   105.4738    |   10.6866   |
+  | 13  | Long An    |   105.9748    |   10.7068   |
 
-- Khoảng thời gian: Ngày 01/01/2015 - Ngày 31/12/2025
-- Samples: 9,252+ daily observations
-- Đặc trưng dữ liệu: ~10 biến khí tượng.
-- Target: Daily precipitation (PRECTOTCORR) in mm/day
+  </p>
+
+- **Khoảng thời gian:** Ngày 01/01/2015 - Ngày 31/12/2025
+- **Số lượng mẫu:** ~52 234 mẫu theo ngày.
+- **Đặc trưng dữ liệu:** ~10 biến khí tượng.
+- **Nhãn đầu ra:** Lượng mưa mỗi ngày theo đơn vị mm/ngày
+
+### Đặc trưng của dữ liệu:
+
+-
+-
+-
+-
+- ...
+
+## 📂 Cây thư mục
+
+```
+DS108/
+│
+├── README.md
+└── LICENSE
+└── ...
+
+```
+
+## Quy trình thực hiện
+
+## Kết quả thực nghiệm
