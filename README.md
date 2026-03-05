@@ -12,8 +12,7 @@ Mục tiêu chính của dự án là xây dựng một pipeline xử lý dữ l
 
 - **Nguồn:** Open-Meteo Weather API và NASAPOWER
 - **Vị trí:**
-
-  <table align="center">
+  <div align="center">
 
   | STT |    Tỉnh    | Kinh độ (lon) | Vĩ độ (lat) |
   | :-: | :--------: | :-----------: | :---------: |
@@ -31,6 +30,8 @@ Mục tiêu chính của dự án là xây dựng một pipeline xử lý dữ l
   | 12  | Đồng Tháp  |   105.4738    |   10.6866   |
   | 13  |  Long An   |   105.9748    |   10.7068   |
 
+  </div>
+
 - **Khoảng thời gian:** Ngày 01/01/2015 - Ngày 31/12/2025
 - **Số lượng mẫu:** ~52 234 mẫu theo ngày.
 - **Đặc trưng dữ liệu:** ~5 biến khí tượng.
@@ -46,7 +47,7 @@ Mục tiêu chính của dự án là xây dựng một pipeline xử lý dữ l
 | 04  |         lon          |    Tọa độ kinh tuyến     |    float32    |           |                [-180, 180]                |
 | 05  |    temperature_2m    |         Nhiệt độ         |    float32    |           |                 [10, 60]                  |         degree C         |
 | 06  | relative_humidity_2m |     Độ ẩm tương đối      |    float32    |           |                 [0, 100]                  |         percent          |
-| 07  |   surface_pressure   |      Ap lực bề mặt       |    float32    |           |                                           |                          |
+| 07  |   surface_pressure   |      Áp lực bề mặt       |    float32    |           |                                           |                          |
 | 08  |    wind_speed_10m    |        Tốc độ gió        |    float32    |           |                                           |           m/s            |
 | 09  |  wind_direction_10m  |        Hướng gió         |     char      |     1     |               {N, E, W, S}                |                          |
 | 10  |     cloud_cover      |    Độ che phủ của mây    |    float32    |           |                 [0, 100]                  |         percent          |
