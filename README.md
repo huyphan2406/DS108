@@ -1,27 +1,3 @@
-<style>
-table {
-    border-collapse: collapse;
-    width: 80%;
-    margin: auto;
-    border: 2px solid white;
-}
-
-th, td {
-    border:1px solid black;
-    padding: 10px;
-    text-align: center;   
-}
-
-th {
-    background-color: #5856569b;
-    border-bottom: 2px solid white;
-}
-
-tr:nth-child(even) {
-    background-color: #7270706a;
-}
-</style>
-
 # 📊 DS108 - Thu thập dữ liệu khí tượng tại Đồng bằng sông Cửu Long (2015–2025) và tiền xử lý cho bài toán dự báo lượng mưa
 
 A comprehensive machine learning project for collecting meteorological data in the Mekong Delta region for the period 2015–2025 and preprocessing it for the rainfall forecasting problem.
@@ -36,6 +12,8 @@ Mục tiêu chính của dự án là xây dựng một pipeline xử lý dữ l
 
 - **Nguồn:** Open-Meteo Weather API và NASAPOWER
 - **Vị trí:**
+
+  <table align="center">
 
   | STT |    Tỉnh    | Kinh độ (lon) | Vĩ độ (lat) |
   | :-: | :--------: | :-----------: | :---------: |
@@ -55,7 +33,7 @@ Mục tiêu chính của dự án là xây dựng một pipeline xử lý dữ l
 
 - **Khoảng thời gian:** Ngày 01/01/2015 - Ngày 31/12/2025
 - **Số lượng mẫu:** ~52 234 mẫu theo ngày.
-- **Đặc trưng dữ liệu:** ~10 biến khí tượng.
+- **Đặc trưng dữ liệu:** ~5 biến khí tượng.
 - **Nhãn đầu ra:** Lượng mưa mỗi ngày theo đơn vị mm/ngày
 
 ### Đặc trưng của dữ liệu:
@@ -68,10 +46,11 @@ Mục tiêu chính của dự án là xây dựng một pipeline xử lý dữ l
 | 04  |         lon          |    Tọa độ kinh tuyến     |    float32    |           |                [-180, 180]                |
 | 05  |    temperature_2m    |         Nhiệt độ         |    float32    |           |                 [10, 60]                  |         degree C         |
 | 06  | relative_humidity_2m |     Độ ẩm tương đối      |    float32    |           |                 [0, 100]                  |         percent          |
-| 07  |   surface_pressure   |      Ap lực bề mặt       |               |           |                                           |                          |
-| 08  |    wind_speed_10m    |        Tốc độ gió        |               |           |                                           |
-| 09  |  wind_direction_10m  |        Hướng gió         |               |           |                                           |
-| 10  |     cloud_cover      |    Độ che phủ của mây    |               |           |                                           |
+| 07  |   surface_pressure   |      Ap lực bề mặt       |    float32    |           |                                           |                          |
+| 08  |    wind_speed_10m    |        Tốc độ gió        |    float32    |           |                                           |           m/s            |
+| 09  |  wind_direction_10m  |        Hướng gió         |     char      |     1     |               {N, E, W, S}                |                          |
+| 10  |     cloud_cover      |    Độ che phủ của mây    |    float32    |           |                 [0, 100]                  |         percent          |
+| 11  |    precipitation     |        Lượng mưa         |    float32    |           |             grater or equal 0             |            mm            |
 
 ## 📂 Cây thư mục
 
