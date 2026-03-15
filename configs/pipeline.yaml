@@ -3,7 +3,7 @@ source:
   base_url: "https://power.larc.nasa.gov/api/temporal"
 
 request:
-  community: "RE"
+  community: "AG"
   format: "JSON"
   time_standard: "UTC"
 
@@ -11,18 +11,20 @@ date_range:
   start_date: "20150101"
   end_date: "20251231"
 
-sampling:
-  hour_step: 1
-
 parameters:
-  hourly:
+  daily:
+    - "PRECTOTCORR"
     - "T2M"
+    - "T2M_MAX"
+    - "T2M_MIN"
+    - "T2MDEW"
+    - "TS"
     - "RH2M"
+    - "QV2M"
     - "PS"
     - "WS10M"
     - "WD10M"
-    - "CLRSKY_SFC_SW_DWN"
-    - "PRECTOTCORR"
-
-  daily:
-    - "PRECTOTCORR"
+    - "ALLSKY_SFC_SW_DWN"
+    - "ALLSKY_SFC_LW_DWN"
+    - "GWETTOP"
+    - "GWETROOT"
