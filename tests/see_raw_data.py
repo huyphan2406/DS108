@@ -31,6 +31,6 @@ df_dict['LONGITUDE'] = metadata['longitude']
 df = pd.DataFrame(df_dict)
 
 # 6. Lưu ra CSV
-df.to_csv('010_Tien_Giang.csv', index=False)
+df.to_csv('raw_data.csv', index=False)
 
 print("Đã chuyển JSON sang CSV xong!")

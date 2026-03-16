@@ -28,3 +28,4 @@ parameters:
     - "ALLSKY_SFC_LW_DWN"
     - "GWETTOP"
     - "GWETROOT"
+    - "CLOUD_AMT"
