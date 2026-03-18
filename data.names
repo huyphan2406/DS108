@@ -1,0 +1,46 @@
+**Thông tin dataset:**
+
+- Tên bộ dữ liệu: Dữ liệu khí tượng cho bài toán dự đoán lượng mưa.
+- Nguồn dữ liệu: NASA POWER.
+- Khối lượng dữ liệu: 6.4 MB.
+- Thời gian thu thập: 01/01/2015 - 31/12/2025.
+- Phạm vi của dữ liệu: 13 tỉnh thành tại khu vực Đồng bằng Sông Cửu Long bao gồm: Cà Mau, Bạc Liêu, Sóc Trăng, Hậu Giang, 
+Trà Vinh, Kiên Giang, Vĩnh Long, Bến Tre, Cần Thơ, Tiền Giang, An Giang, Đồng Tháp, Long An.
+- Số lượng mẫu: ~ 52.235 mẫu theo ngày.
+- Số lượng feature: 19 features + 1 target values.
+- Missing value: None
+
+- Mô tả các biến: 
+
+    1. Nhóm các biến xác định vị trí và thời gian:
+    - LOCATION: Tên tỉnh thành trong Đồng bằng Sông Cửu Long (string)
+    - LATITUDE: Vĩ độ: 104.9826 - 106.4671.
+    - LONGITUDE: Kinh độ: 9.0851 - 10.7068.
+    - DATE: Ngày ghi nhận dữ liệu: 20150101 - 20251231
+
+    2. Nhóm dữ liệu nhiệt độ:
+    - T2M: Nhiệt độ trung bình (degree C)
+    - T2M_MAX: Nhiệt độ cao nhất ngày (degree C)
+    - T2M_MIN: Nhiệt độ thấp nhất ngày (degree C)
+    - T2MDEW: Điểm sương (degree C)
+    - TS: Nhiệt độ bề mặt đất (degree C)
+
+    3. Nhóm dữ liệu độ ẩm:
+    - RH2M: Độ ẩm tương đối tại 2m (%): 42.57 - 100
+    - QV2M: Độ ẩm riêng tại 2m (%): 8.26 - 100
+
+    4. Nhóm dữ liệu gió
+    - WS10M: Tốc độ gió tại 10m (m/s): 0.63 - 10.47
+    - WD10M: Hướng gió (degree): 0 - 360
+    5. Nhóm dữ liệu bức xạ
+    - ALLSKY_SFC_SW_ DWN: Bức xạ mặt trời xuống bề mặt (Wh/m2): 2.37 - 26.86
+    - ALLSKY_SFC_LW_DWN: Bức xạ hồng ngoại xuống mặt đất (Wh/m2): 30.06 - 39.58
+
+    6. Nhóm dữ liệu độ ẩm, mây và áp lực khí quyển
+    - GWETTOP: Độ ẩm lớp đất mặt: 0 - 1
+    - GWETROOT: Độ ẩm lớp đất gốc: 0 - 1
+    - CLOUD_AMT: Độ che phủ mây (%): 0.94 - 99.97
+    - PS: Áp lực khí quyển (kPa): 100.15 - 101.61
+
+    7. Nhóm dữ liệu lượng mưa:
+    - PRECTOTCORR: Lượng mưa đã hiệu chỉnh (mm/day)
