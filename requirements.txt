@@ -1,3 +1,4 @@
+streamlit>=1.31.0
 pandas
 numpy
 matplotlib
@@ -6,4 +7,4 @@ scikit-learn
 xgboost
 joblib
 plotly
-streamlit
+altair<5.0.0
