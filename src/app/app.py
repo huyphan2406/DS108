@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import joblib
 import plotly.express as px
+from src.ai.chatbot_engine import get_chatbot_response
 from pathlib import Path
 import sys
 
@@ -121,3 +122,34 @@ st.markdown(f"""
         <p>{UNIVERSITY}</p>
     </div>
     """, unsafe_allow_html=True)
+
+# =====================================================================
+# 5. TRỢ LÝ AI LUÔN HIỆN (FLOATING WIDGET)
+# =====================================================================
+with st.container():
+    st.markdown('<div id="chatbot-container">', unsafe_allow_html=True)
+    st.markdown("##### 🤖 Trợ lý Phú Bài AI")
+
+    if "messages" not in st.session_state:
+        st.session_state.messages = [
+            {"role": "assistant", "content": "Chào bạn! Tôi chuyên hỗ trợ dữ liệu Phú Bài. Bạn cần tra cứu gì?"}]
+
+    chat_placeholder = st.empty()
+    with chat_placeholder.container():
+        for msg in st.session_state.messages:
+            with st.chat_message(msg["role"]):
+                st.write(msg["content"])
+
+    # Xử lý nhập liệu
+    if prompt := st.chat_input("Hỏi về lịch sử..."):
+        # Lưu câu hỏi của user
+        st.session_state.messages.append({"role": "user", "content": prompt})
+
+        # GỌI HÀM XỬ LÝ TỪ FILE CHATBOT_ENGINE.PY
+        res = get_chatbot_response(prompt, data_source)
+
+        # Lưu câu trả lời của bot
+        st.session_state.messages.append({"role": "assistant", "content": res})
+        st.rerun()
+
+    st.markdown('</div>', unsafe_allow_html=True)
