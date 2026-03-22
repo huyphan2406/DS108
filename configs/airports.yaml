@@ -1,0 +1,25 @@
+airports:
+  da_nang:
+    station_name: DA NANG
+    lat: 16.044
+    lon: 108.199
+  cam_ranh:
+    station_name: CAM RANH
+    lat: 12.25
+    lon: 109.2
+  phu_bai:
+    station_name: PHU BAI
+    lat: 16.402
+    lon: 107.703
+  pleiku:
+    station_name: PLEIKU
+    lat: 14.005
+    lon: 108.017
+  phu_cat:
+    station_name: PHU CAT
+    lat: 13.767
+    lon: 109.217
+  vinh:
+    station_name: VINH
+    lat: 18.737
+    lon: 105.671

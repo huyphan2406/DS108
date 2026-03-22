@@ -1,5 +1,8 @@
-pandas
-numpy
+pandas~=3.0.1
+numpy~=1.26.4
 matplotlib
 seaborn
 sklearn
+yaml~=0.2.5
+pyyaml~=6.0.2
+requests~=2.32.3
