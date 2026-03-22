@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 import joblib
 import plotly.express as px
-from src.ai.chatbot_engine import get_chatbot_response
 from pathlib import Path
 import sys
 
@@ -27,6 +26,7 @@ if str(BASE_DIR) not in sys.path:
 MODEL_PATH = BASE_DIR / "models" / "weather_model_xgb.pkl"
 GOLD_PATH = BASE_DIR / "data" / "gold" / "master_data_gold.csv"
 
+from src.ai.chatbot_engine import get_chatbot_response
 
 # =====================================================================
 # 2. TẢI TÀI NGUYÊN
@@ -124,32 +124,34 @@ st.markdown(f"""
     """, unsafe_allow_html=True)
 
 # =====================================================================
-# 5. TRỢ LÝ AI LUÔN HIỆN (FLOATING WIDGET)
+# 5. TRỢ LÝ AI (NẰM GỌN TRONG SIDEBAR - AN TOÀN 100%)
 # =====================================================================
-with st.container():
-    st.markdown('<div id="chatbot-container">', unsafe_allow_html=True)
-    st.markdown("##### 🤖 Trợ lý Phú Bài AI")
+# Chèn bot vào thanh Sidebar bên trái (hoặc bạn có thể bỏ 'with st.sidebar:' để nó nằm ở trang chính)
+with st.sidebar:
+    st.markdown("---")
+    st.markdown("### 🤖 Trợ lý AI")
 
     if "messages" not in st.session_state:
         st.session_state.messages = [
-            {"role": "assistant", "content": "Chào bạn! Tôi chuyên hỗ trợ dữ liệu Phú Bài. Bạn cần tra cứu gì?"}]
+            {"role": "assistant",
+             "content": "Chào bạn! Tôi là trợ lý ảo. Bạn cần tra cứu kỷ lục nhiệt độ hay lượng mưa?"}
+        ]
 
-    chat_placeholder = st.empty()
-    with chat_placeholder.container():
+    # Khung chứa nội dung chat (Có chiều cao cố định để cuộn được mượt mà)
+    chat_box = st.container(height=350, border=True)
+    with chat_box:
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
                 st.write(msg["content"])
 
-    # Xử lý nhập liệu
-    if prompt := st.chat_input("Hỏi về lịch sử..."):
-        # Lưu câu hỏi của user
+    # Ô nhập liệu nằm ngay dưới khung chat
+    if prompt := st.chat_input("Nhập câu hỏi tại đây..."):
+        # Lưu và hiển thị câu hỏi
         st.session_state.messages.append({"role": "user", "content": prompt})
 
-        # GỌI HÀM XỬ LÝ TỪ FILE CHATBOT_ENGINE.PY
+        # Gọi xử lý
         res = get_chatbot_response(prompt, data_source)
 
-        # Lưu câu trả lời của bot
+        # Lưu và hiển thị trả lời
         st.session_state.messages.append({"role": "assistant", "content": res})
         st.rerun()
-
-    st.markdown('</div>', unsafe_allow_html=True)
