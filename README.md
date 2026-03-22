@@ -4,13 +4,13 @@ A comprehensive machine learning project for collecting meteorological data in t
 
 ## 🎯 Giới thiệu:
 
-Dự án sử dụng nguồn dữ liệu khí tượng từ Open-Meteo với mục đích thu thập, làm sạch và tiền xử lý dữ liệu thời tiết phục vụ cho bài toán dự đoán lượng mưa tại Đồng bằng Sông Cửu Long (Việt Nam) trong giai đoạn 2015-2025.
+Dự án sử dụng nguồn dữ liệu khí tượng từ NASA POWER với mục đích thu thập, làm sạch và tiền xử lý dữ liệu thời tiết phục vụ cho bài toán dự đoán lượng mưa tại Đồng bằng Sông Cửu Long (Việt Nam) trong giai đoạn 2015-2025.
 
 Mục tiêu chính của dự án là xây dựng một pipeline xử lý dữ liệu hoàn chỉnh trước khi áp dụng các mô hình học máy.
 
 ## 📊 Dữ liệu:
 
-- **Nguồn:** Open-Meteo Weather API và NASAPOWER
+- **Nguồn:** NASA POWER
 - **Vị trí:**
   <div align="center">
 
@@ -33,25 +33,9 @@ Mục tiêu chính của dự án là xây dựng một pipeline xử lý dữ l
   </div>
 
 - **Khoảng thời gian:** Ngày 01/01/2015 - Ngày 31/12/2025
-- **Số lượng mẫu:** ~52 234 mẫu theo ngày.
-- **Đặc trưng dữ liệu:** ~5 biến khí tượng.
+- **Số lượng mẫu:** ~52.235 mẫu theo ngày.
+- **Đặc trưng dữ liệu:** ~15 biến khí tượng.
 - **Nhãn đầu ra:** Lượng mưa mỗi ngày theo đơn vị mm/ngày
-
-### Đặc trưng của dữ liệu:
-
-| STT |     Tên viết tắt     |        Giải thích        | Kiểu dữ liệu  | Chiều dài |               Miền dữ liệu                |       Đơn vị tính        |
-| :-: | :------------------: | :----------------------: | :-----------: | :-------: | :---------------------------------------: | :----------------------: |
-| 01  |         Time         | Thời gian đo đạt dữ liệu | smalldatetime |           | 01/01/2015 00:00:00 - 31/12/2025 23:59:59 | dd/mm/yyyy giờ:phút:giây |
-| 02  |     Location_id      |    Mã vị trí dữ liệu     |      int      |     3     |                [001, 013]                 |                          |
-| 03  |         lat          |     Tọa độ vĩ tuyến      |    float32    |           |                 [-90, 90]                 |          degree          |
-| 04  |         lon          |    Tọa độ kinh tuyến     |    float32    |           |                [-180, 180]                |
-| 05  |    temperature_2m    |         Nhiệt độ         |    float32    |           |                 [10, 60]                  |         degree C         |
-| 06  | relative_humidity_2m |     Độ ẩm tương đối      |    float32    |           |                 [0, 100]                  |         percent          |
-| 07  |   surface_pressure   |      Áp lực bề mặt       |    float32    |           |                                           |                          |
-| 08  |    wind_speed_10m    |        Tốc độ gió        |    float32    |           |                                           |           m/s            |
-| 09  |  wind_direction_10m  |        Hướng gió         |     char      |     1     |               {N, E, W, S}                |                          |
-| 10  |     cloud_cover      |    Độ che phủ của mây    |    float32    |           |                 [0, 100]                  |         percent          |
-| 11  |    precipitation     |        Lượng mưa         |    float32    |           |             grater or equal 0             |            mm            |
 
 ## 📂 Cây thư mục
 
