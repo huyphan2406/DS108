@@ -89,7 +89,8 @@ with col_res:
             st.info("Mưa nhỏ/vừa 🌦️")
         else:
             st.error("Mưa rất to! ⛈️")
-        st.progress(min(rain / 100.0, 1.0))
+        rain_val = float(rain[0]) if isinstance(rain, (np.ndarray, list)) else float(rain)
+        st.progress(min(rain_val / 100.0, 1.0))
     else:
         st.info("👈 Hãy chỉnh thông số và nhấn nút.")
 
