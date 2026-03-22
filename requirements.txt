@@ -1,8 +1,9 @@
-pandas~=3.0.1
-numpy~=1.26.4
+pandas
+numpy
 matplotlib
 seaborn
-sklearn
-yaml~=0.2.5
-pyyaml~=6.0.2
-requests~=2.32.3
+scikit-learn
+xgboost
+joblib
+plotly
+streamlit
