@@ -238,6 +238,18 @@ df_master[cols_to_round] = df_master[cols_to_round].round(2)
 print("✅ Đã làm tròn xong! Dữ liệu gọn gàng và không mất đi tọa độ gốc.")
 
 # =====================================================================
+# 5.6 SẮP XẾP DỮ LIỆU (SORTING) - QUAN TRỌNG CHO LỚP GOLD
+# =====================================================================
+print("🗂️ Đang sắp xếp dữ liệu theo Tọa độ và Thời gian...")
+
+# Sắp xếp theo Vĩ độ -> Kinh độ -> Ngày tháng
+# Việc này giúp các dòng của cùng một trạm nằm cạnh nhau theo đúng trình tự thời gian
+df_master.sort_values(by=['latitude', 'longitude', 'date'], inplace=True)
+
+# Reset lại index sau khi sort để tránh index bị lộn xộn
+df_master.reset_index(drop=True, inplace=True)
+
+# =====================================================================
 # 6️⃣ XUẤT FILE CUỐI CÙNG
 # =====================================================================
 df_master.to_csv(SILVER_FINAL_OUTPUT, index=False)
