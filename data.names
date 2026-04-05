@@ -1,46 +1,54 @@
-**Thông tin dataset:**
+**BỘ DỮ LIỆU KHÍ TƯỢNG CHO BÀI TOÁN DỰ BÁO LƯỢNG MƯA TRONG GIAI ĐOẠN 2015 - 2025 TẠI 6 TRẠM KHÍ TƯỢNG **
+1. Tóm tắt (Abstract)
+Bộ dữ liệu này cung cấp thông tin quan trắc thời tiết bề mặt hàng ngày tại 6 trạm khí tượng sân bay Việt Nam trong giai đoạn 11 năm (từ 2015 đến 2025). 
+Dữ liệu được trích xuất từ hệ thống Global Summary of the Day (GSOD) của NOAA.
 
-- Tên bộ dữ liệu: Dữ liệu khí tượng cho bài toán dự đoán lượng mưa.
-- Nguồn dữ liệu: NASA POWER.
-- Khối lượng dữ liệu: 8.5 MB.
-- Thời gian thu thập: 01/01/2015 - 31/12/2025.
-- Phạm vi của dữ liệu: 13 tỉnh thành tại khu vực Đồng bằng Sông Cửu Long bao gồm: Cà Mau, Bạc Liêu, Sóc Trăng, Hậu Giang, 
-Trà Vinh, Kiên Giang, Vĩnh Long, Bến Tre, Cần Thơ, Tiền Giang, An Giang, Đồng Tháp, Long An.
-- Số lượng mẫu: ~ 52.235 mẫu theo ngày.
-- Số lượng feature: 19 features + 1 target values.
-- Missing value: None
+2. Nguồn gốc & Thu thập (Provenance & Collection)
+ * Nguồn cung cấp chính: Cục Quản lý Đại dương và Khí quyển Quốc gia Hoa Kỳ (NOAA).
+ * Phương pháp thu thập: Tự động trích xuất hàng loạt (Batch Crawling) qua giao thức HTTP từ kho lưu trữ NCEI.
+ * Khu vực địa lý: Bao gồm 6 trạm khí tượng tại các cảng sân bay như Cam Ranh, Đà Nẵng, Phú Bài, Phú Cát, Pleiku và Vinh.
+ * Khung thời gian: 01/01/2015 - 24/08/2025.
 
-- Mô tả các biến: 
+3. Cấu trúc & Định dạng (Structure & Format)
+ * Tên File: master_data_silver.csv
+ * Định dạng: CSV (Comma-Separated Values) UTF-8.
+ * Tổ chức dữ liệu: Dạng bảng (Tabular), được sắp xếp tuần tự theo chuỗi thời gian của từng mã trạm định danh (STATION \rightarrow DATE).
+ * Khối lượng dữ liệu: 4.9 MB.
+ * Tổng số lượng mẫu: ~ 22.883 mẫu theo ngày.
+ * Số lượng thuộc tính: 
 
-    1. Nhóm các biến xác định vị trí và thời gian:
-    - location: Tên tỉnh thành trong Đồng bằng Sông Cửu Long (string)
-    - latitude: Vĩ độ: 104.9826 - 106.4671.
-    - longitude: Kinh độ: 9.0851 - 10.7068.
-    - date: Ngày ghi nhận dữ liệu: 20150101 - 20251231
+4. Từ điển Dữ liệu (Data Schema)
+| STT | Tên cột          | Giải thích       | Chi tiết                                                   | Đơn vị     | Kiểu dữ liệu | Miền giá trị      |
+| --- | ---------------- | ---------------- | ---------------------------------------------------------- | ---------- | ------------ | ----------------- |
+| 1   | STATION          | Mã trạm          | Định danh duy nhất của trạm quan trắc                      | -          | String       | Chuỗi số          |
+| 2   | DATE             | Ngày đo          | Ngày thực hiện quan trắc                                   | YYYY-MM-DD | Datetime     | Theo lịch         |
+| 3   | LATITUDE         | Vĩ độ            | Xác định vị trí Bắc – Nam                                  | °          | Float        | [-90, 90]         |
+| 4   | LONGITUDE        | Kinh độ          | Xác định vị trí Đông – Tây                                 | °          | Float        | [-180, 180]       |
+| 5   | ELEVATION        | Độ cao           | So với mực nước biển                                       | m          | Float        | ≥ 0               |
+| 6   | NAME             | Tên trạm         | Tên địa điểm quan trắc                                     | -          | String       | Chuỗi             |
+| 7   | TEMP             | Nhiệt độ TB      | Trung bình trong ngày                                      | °F         | Float        | [-80, 140]        |
+| 8   | TEMP_ATTRIBUTES  | Thuộc tính TEMP  | Flag chất lượng / số lần đo                                | -          | String       | Chuỗi             |
+| 9   | DEWP             | Điểm sương       | Nhiệt độ ngưng tụ hơi nước                                 | °F         | Float        | [-80, 100]        |
+| 10  | DEWP_ATTRIBUTES  | Thuộc tính DEWP  | Flag dữ liệu                                               | -          | String       | Chuỗi             |
+| 11  | SLP              | Áp suất biển     | Sea Level Pressure                                         | hPa        | Float        | [870, 1080]       |
+| 12  | SLP_ATTRIBUTES   | Thuộc tính SLP   | Flag dữ liệu                                               | -          | String       | Chuỗi             |
+| 13  | STP              | Áp suất trạm     | Station Pressure                                           | hPa        | Float        | [500, 1080]       |
+| 14  | STP_ATTRIBUTES   | Thuộc tính STP   | Flag dữ liệu                                               | -          | String       | Chuỗi             |
+| 15  | VISIB            | Tầm nhìn         | Tầm nhìn xa trung bình                                     | miles      | Float        | [0, 100]          |
+| 16  | VISIB_ATTRIBUTES | Thuộc tính VISIB | Flag dữ liệu                                               | -          | String       | Chuỗi             |
+| 17  | WDSP             | Gió TB           | Tốc độ gió trung bình                                      | knot       | Float        | [0, 200]          |
+| 18  | WDSP_ATTRIBUTES  | Thuộc tính WDSP  | Flag dữ liệu                                               | -          | String       | Chuỗi             |
+| 19  | MXSPD            | Gió max          | Tốc độ gió lớn nhất                                        | knot       | Float        | [0, 250]          |
+| 20  | GUST             | Gió giật         | Tốc độ gió giật mạnh                                       | knot       | Float        | [0, 250]          |
+| 21  | MAX              | Nhiệt độ max     | Cao nhất trong ngày                                        | °F         | Float        | [-80, 140]        |
+| 22  | MAX_ATTRIBUTES   | Thuộc tính MAX   | Flag dữ liệu                                               | -          | String       | Chuỗi             |
+| 23  | MIN              | Nhiệt độ min     | Thấp nhất trong ngày                                       | °F         | Float        | [-80, 120]        |
+| 24  | MIN_ATTRIBUTES   | Thuộc tính MIN   | Flag dữ liệu                                               | -          | String       | Chuỗi             |
+| 25  | PRCP             | Lượng mưa        | Tổng lượng mưa trong ngày                                  | inch       | Float        | [0, 50+]          |
+| 26  | PRCP_ATTRIBUTES  | Thuộc tính PRCP  | Flag dữ liệu                                               | -          | String       | Chuỗi             |
+| 27  | SNDP             | Tuyết            | Độ sâu tuyết                                               | inch       | Float        | ≥ 0               |
+| 28  | FRSHTT           | Hiện tượng       | Mã hóa thời tiết (Fog, Rain, Snow, Hail, Thunder, Tornado) | -          | String       | Chuỗi (0/1 flags) |
 
-    2. Nhóm dữ liệu nhiệt độ:
-    - temperature2m: Nhiệt độ trung bình (degree C)
-    - temperature2mMax: Nhiệt độ cao nhất ngày (degree C)
-    - temperature2mMin: Nhiệt độ thấp nhất ngày (degree C)
-    - dewPoint2m: Điểm sương (degree C)
-    - earthSkinTemperature: Nhiệt độ bề mặt đất (degree C)
+*Lưu ý: Hệ thống GSOD mặc định sử dụng hệ đo lường Anh-Mỹ. Để phù hợp với việc sự dụng hệ đo lường hiện tại tại Việt Nam, cần phải chuyển sang hệ mét.
 
-    3. Nhóm dữ liệu độ ẩm:
-    - relativeHumidity2m: Độ ẩm tương đối tại 2m (%): 42.57 - 100
-    - specificHumidity2m: Độ ẩm riêng tại 2m (%): 8.26 - 100
-
-    4. Nhóm dữ liệu gió
-    - windSpeed10m: Tốc độ gió tại 10m (m/s): 0.63 - 10.47
-    - windDirection10m: Hướng gió (degree): 0 - 360
-    5. Nhóm dữ liệu bức xạ
-    - shortwaveDownwardIrradiance: Bức xạ mặt trời xuống bề mặt (Wh/m2): 2.37 - 26.86
-    - longwaveDownwardIrradiance: Bức xạ hồng ngoại xuống mặt đất (Wh/m2): 30.06 - 39.58
-
-    6. Nhóm dữ liệu độ ẩm, mây và áp lực khí quyển
-    - surfaceSoilWetness: Độ ẩm lớp đất mặt: 0 - 1
-    - rootZoneSoilWetness: Độ ẩm lớp đất gốc: 0 - 1
-    - cloudFraction: Độ che phủ mây (%): 0.94 - 99.97
-    - surfacePressure: Áp lực khí quyển (kPa): 100.15 - 101.61
-
-    7. Nhóm dữ liệu lượng mưa:
-    - precipitationCorrected: Lượng mưa đã hiệu chỉnh (mm/day)
+5. Dữ liệu thiếu (Missing Value)
