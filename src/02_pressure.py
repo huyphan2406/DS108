@@ -68,14 +68,26 @@ LEVEL_NAME = "isobaricInhPa"
 RESAMPLE_FREQUENCY = "1D"
 GRAVITY = 9.80665
 
-# Project paths. Prefer the corrected folder name `pressure`.
-BASE_DIR = Path(__file__).resolve().parent.parent if "__file__" in globals() else Path.cwd()
-BASE_PRESSURE_RAW = BASE_DIR / "data" / "raw" / "pressure"
-LEGACY_BASE_PRESSURE_RAW = BASE_DIR / "data" / "raw" / "presure"  # old misspelling fallback
-BASE_PRESSURE_CLEAN = BASE_DIR / "data" / "clean" / "pressure"
-REPORT_DIR = BASE_DIR / "reports" / "data_quality" / "pressure"
+# Project paths.
+# Standard project structure:
+# data/raw/pressure/      -> raw ERA5 pressure-level GRIB files
+# data/clean/pressure/    -> intermediate processed parquet files
+# data/clean/             -> final clean pressure-level parquet
+# reports/data_quality/pressure/ -> quality reports
 
-OUTPUT_PRESSURE_FINAL = BASE_DIR / "data" / "clean" / "ERA5_pressure_final.parquet"
+BASE_DIR = Path(__file__).resolve().parent.parent if "__file__" in globals() else Path.cwd()
+
+RAW_DIR = BASE_DIR / "data" / "raw"
+CLEAN_DIR = BASE_DIR / "data" / "clean"
+REPORT_ROOT_DIR = BASE_DIR / "reports" / "data_quality"
+
+BASE_PRESSURE_RAW = RAW_DIR / "pressure"
+LEGACY_BASE_PRESSURE_RAW = RAW_DIR / "presure"  # fallback for old misspelled folder
+
+BASE_PRESSURE_CLEAN = CLEAN_DIR / "pressure"
+REPORT_DIR = REPORT_ROOT_DIR / "pressure"
+
+OUTPUT_PRESSURE_FINAL = CLEAN_DIR / "ERA5_pressure_final.parquet"
 OUTPUT_METADATA_JSON = REPORT_DIR / "pressure_metadata.json"
 OUTPUT_QUALITY_SUMMARY_CSV = REPORT_DIR / "pressure_quality_summary.csv"
 OUTPUT_MISSING_RATE_CSV = REPORT_DIR / "pressure_missing_rate_by_column.csv"

@@ -105,11 +105,14 @@ def find_project_root(start: Optional[Path] = None) -> Path:
 
 
 BASE_DIR = find_project_root()
-INPUT_FILE = BASE_DIR / "data" / "raw" / "meiv2.data"
-CLEAN_DIR = BASE_DIR / "data" / "clean"
-OUTPUT_FILE = CLEAN_DIR / ENSO_OUTPUT_NAME
-REPORT_DIR = BASE_DIR / "reports" / "data_quality" / "enso"
 
+RAW_DIR = BASE_DIR / "data" / "raw"
+CLEAN_DIR = BASE_DIR / "data" / "clean"
+REPORT_ROOT_DIR = BASE_DIR / "reports" / "data_quality"
+
+INPUT_FILE = RAW_DIR / "enso" / "meiv2.data"
+OUTPUT_FILE = CLEAN_DIR / ENSO_OUTPUT_NAME
+REPORT_DIR = REPORT_ROOT_DIR / "enso"
 
 def ensure_directories() -> None:
     """Create required output/report directories."""
@@ -254,7 +257,7 @@ def process_enso_data(
     main_year_end: int = MAIN_YEAR_END,
     lags: Iterable[int] = LAG_PERIODS,
     include_current_enso: bool = True,
-    run_merge_check: bool = True,
+    run_merge_check: bool = False,
     daily_dataset_path: Optional[Path] = None,
 ) -> pd.DataFrame:
     """
@@ -569,6 +572,6 @@ if __name__ == "__main__":
         main_year_end=MAIN_YEAR_END,
         lags=LAG_PERIODS,
         include_current_enso=True,
-        run_merge_check=True,
-        daily_dataset_path=CLEAN_DIR / DEFAULT_DAILY_DATASET_FOR_MERGE_CHECK,
+        run_merge_check=False,
+        daily_dataset_path=None,
     )

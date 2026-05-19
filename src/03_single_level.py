@@ -41,8 +41,8 @@ RESAMPLE_FREQUENCY = "1D"
 GRID_RESOLUTION = 0.25
 
 # Raw folders are expected to be:
-# data/raw/single/Single_level_1520/data.grib
-# data/raw/single/Single_level_2125/data.grib
+# data/raw/single/single_level_1520/data.grib
+# data/raw/single/single_level_2125/data.grib
 SINGLE_LEVEL_PERIODS = ("1520", "2125")
 
 # Output filenames
@@ -115,11 +115,26 @@ def find_project_root(start: Optional[Path] = None) -> Path:
 
 
 BASE_DIR = find_project_root()
-BASE_SINGLE_RAW = BASE_DIR / "data" / "raw" / "single"
-BASE_SINGLE_CLEAN = BASE_DIR / "data" / "clean" / "single_level"
-OUTPUT_SINGLE_FINAL = BASE_DIR / "data" / "clean" / OUTPUT_SINGLE_FINAL_NAME
-BRONZE_GSOD_PATH = BASE_DIR / "data" / "raw" / "bronze_data.csv"
-REPORT_DIR = BASE_DIR / QUALITY_REPORT_SUBDIR
+
+# Standard project structure
+RAW_DIR = BASE_DIR / "data" / "raw"
+CLEAN_DIR = BASE_DIR / "data" / "clean"
+REPORT_ROOT_DIR = BASE_DIR / "reports" / "data_quality"
+
+# Raw ERA5 single-level GRIB directory
+BASE_SINGLE_RAW = RAW_DIR / "single"
+
+# Intermediate parquet outputs
+BASE_SINGLE_CLEAN = CLEAN_DIR / "single_level"
+
+# Final merged single-level parquet
+OUTPUT_SINGLE_FINAL = CLEAN_DIR / OUTPUT_SINGLE_FINAL_NAME
+
+# Bronze GSOD dataset
+BRONZE_GSOD_PATH = RAW_DIR / "gsod" / "bronze_data.csv"
+
+# Quality report directory
+REPORT_DIR = REPORT_ROOT_DIR / "single_level"
 
 
 def ensure_directories() -> None:
@@ -200,7 +215,18 @@ def _load_base_single_level_variables(grib_path: Path) -> pd.DataFrame:
     step/valid_time fields that need special handling.
     """
     print(f"\n--- Reading base single-level variables from: {grib_path}")
-    ds = xr.open_dataset(grib_path, engine="cfgrib")
+    ds = xr.open_dataset(
+        grib_path,
+        engine="cfgrib",
+        backend_kwargs={
+            "filter_by_keys": {
+                "shortName": "tp",
+                "stepType": "accum",
+            },
+            "errors": "ignore",
+            "indexpath": "",
+        },
+    )
     ds_filter = ds.sel(
         latitude=slice(*VIETNAM_LAT_SLICE),
         longitude=slice(*VIETNAM_LON_SLICE),

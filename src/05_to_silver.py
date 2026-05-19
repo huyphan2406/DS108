@@ -1,29 +1,37 @@
 """
-Silver layer data integration and imputation module.
+Step 5 - Silver Layer Integration for DS108 Rainfall Project.
 
-This module upgrades the original `_05_to_silver.py` pipeline with stronger
-methodological rigor for a data-preprocessing course project.
+This script builds a clean Silver dataset by integrating:
+1. GSOD station observations
+2. ERA5 single-level data
+3. ERA5 pressure-level data
+4. ENSO / MEI climate index
 
-Main improvements:
-1. Fix VISIB interpolation so it is performed within each station/grid group,
-   not across the entire dataframe.
-2. Diagnose missingness BEFORE imputation:
-   - missing rate by column
-   - missing rate by station
-   - missing rate by month
-   - simple MCAR/MAR-oriented missingness signals
-3. Fill missing GSOD values using ERA5 reanalysis while preserving source flags.
-4. Compare GSOD observations and ERA5-filled values to check whether imputation
-   distorts distributions:
-   - mean / median / std before and after fill
-   - filled-only distribution
-   - GSOD vs ERA5 correlation on overlapping days
-   - diagnostic plots
-5. Add data leakage notes and metadata:
-   ERA5 reanalysis is acceptable for constructing a historical benchmark dataset,
-   but it must not be described as an operational future-forecast input unless
-   replaced by real-time forecast products.
-6. Keep a removal-rationale table for dropped columns.
+Design goals:
+- Produce a clean modeling/feature-engineering input:
+    data/clean/silver_data.csv
+- Keep audit/source information in reports, not in the final Silver CSV.
+- Avoid leaking technical flags into downstream modeling.
+- Preserve methodological reports for data quality, missingness, imputation,
+  overlap comparison, and merge coverage.
+
+Recommended project structure:
+DS108/
+├── data/
+│   ├── raw/
+│   │   ├── gsod/bronze_data.csv
+│   │   ├── single/...
+│   │   ├── pressure/...
+│   │   └── enso/meiv2.data
+│   └── clean/
+│       ├── ERA5_single_level.parquet
+│       ├── ERA5_pressure_final.parquet
+│       ├── enso_clean.csv
+│       └── silver_data.csv
+├── reports/
+│   └── data_quality/silver/
+└── src/
+    └── 05_to_silver.py
 """
 
 from __future__ import annotations
@@ -32,15 +40,15 @@ import json
 import warnings
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional
 
 import numpy as np
 import pandas as pd
 
 
-# ============================================================================
+# =============================================================================
 # CONFIGURATION
-# ============================================================================
+# =============================================================================
 
 DATA_START_DATE = "2015-01-01"
 DATA_END_DATE = "2024-12-31"
@@ -50,7 +58,7 @@ STATIONARY_COLS = ["DATE", "LATITUDE", "LONGITUDE", "ELEVATION"]
 WEATHER_COLS = ["TEMP", "PRCP", "WDSP", "DEWP", "STP", "SLP", "VISIB"]
 ALL_COLS = ["STATION"] + STATIONARY_COLS + WEATHER_COLS
 
-# GSOD missing/error codes
+# GSOD missing/error codes.
 ROGUE_MAPPING = {
     "PRCP": 99.99,
     "VISIB": 999.9,
@@ -61,7 +69,7 @@ ROGUE_MAPPING = {
     "SLP": 9999.9,
 }
 
-# Unit conversion factors from GSOD units to metric units.
+# GSOD units -> metric units.
 # Formula: output = (input + offset) * factor
 UNIT_CONVERSIONS = {
     "TEMP": {"factor": 5 / 9, "offset": -32, "unit": "°C from °F"},
@@ -71,13 +79,13 @@ UNIT_CONVERSIONS = {
     "VISIB": {"factor": 1.60934, "offset": 0, "unit": "km from miles"},
 }
 
-# Valid physical / sanity ranges.
+# Physical / sanity ranges after conversion.
 PRESSURE_MIN, PRESSURE_MAX = 800, 1100
 TEMP_MIN_C, TEMP_MAX_C = -20, 55
 PRCP_MIN_MM = 0
 PRCP_EXTREME_WARNING_MM = 500
 
-# ERA5 single-level columns used to fill GSOD-like fields.
+# ERA5 single-level columns used to fill GSOD-like weather variables.
 ERA5_FILL_MAPPING = {
     "TEMP": "t2m",
     "PRCP": "tp",
@@ -86,41 +94,48 @@ ERA5_FILL_MAPPING = {
     "SLP": "msl",
 }
 
-# ERA5 u/v wind can be used to fill missing GSOD WDSP.
 FILL_WDSP_FROM_ERA5_UV = True
 
-# Columns to interpolate because ERA5 has no direct equivalent in this pipeline.
+# VISIB has no direct ERA5 equivalent in this project, so we interpolate
+# only within the same station/grid group.
 GROUPWISE_INTERPOLATION_COLS = ["VISIB"]
-
-# Columns used to define groups for temporal imputation.
 GROUPBY_GRID_COLS = ["STATION", "latitude", "longitude"]
 
-# Keep auxiliary ERA5 variables by default because they may be useful for EDA or
-# feature engineering. Set to False if you want a smaller silver dataset.
-KEEP_AUXILIARY_ERA5 = True
-AUXILIARY_ERA5_COLS = ["u10", "v10", "sst", "z", "lsm"]
+# Keep useful ERA5 auxiliary variables in final Silver.
+# sst is often all missing for inland station points and will be dropped if all missing.
+AUXILIARY_ERA5_COLS_TO_KEEP = ["u10", "v10", "z", "lsm"]
 
-# Temporary / duplicate columns that can be removed after filling.
-# These are not original GSOD variables; they are duplicate ERA5 source columns
-# after their values have been used to fill standardized columns.
+# Duplicate ERA5 source columns to drop after their values are used for filling.
 DUPLICATE_ERA5_SOURCE_COLS = ["t2m", "d2m", "tp", "sp", "msl"]
 
-# Pressure-level final filenames can differ across your older/newer scripts.
+# Final audit/source/technical columns to remove from Silver final.
+FINAL_AUDIT_COLS_TO_DROP = [
+    "has_gsod_record",
+    "TEMP_source",
+    "PRCP_source",
+    "DEWP_source",
+    "STP_source",
+    "SLP_source",
+    "WDSP_source",
+    "VISIB_source",
+    "source_period",
+    "MEI_WINDOW",
+    "YEAR",
+    "MONTH",
+]
+
 PRESSURE_FILE_CANDIDATES = [
     "ERA5_pressure_final.parquet",
     "ERA5_Pressure_Final.parquet",
 ]
 
-# ENSO output from step 4.
 ENSO_FILE_NAME = "enso_clean.csv"
-
-# Final output.
-SILVER_OUTPUT_NAME = "silver_data_ver2.csv"
+SILVER_OUTPUT_NAME = "silver_data.csv"
 
 
-# ============================================================================
+# =============================================================================
 # PATH HELPERS
-# ============================================================================
+# =============================================================================
 
 def find_project_root(start: Optional[Path] = None) -> Path:
     """
@@ -128,32 +143,36 @@ def find_project_root(start: Optional[Path] = None) -> Path:
     Works whether this script is placed in project root or in src/.
     """
     if start is None:
-        start = Path(__file__).resolve().parent
+        start = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
 
     candidates = [start, *start.parents]
     for path in candidates:
         if (path / "data").exists():
             return path
 
-    return Path(__file__).resolve().parent
+    return start
 
 
 BASE_DIR = find_project_root()
+
 RAW_DIR = BASE_DIR / "data" / "raw"
 CLEAN_DIR = BASE_DIR / "data" / "clean"
-REPORT_DIR = BASE_DIR / "reports" / "data_quality" / "silver"
+REPORT_ROOT_DIR = BASE_DIR / "reports" / "data_quality"
 
-BRONZE_GSOD_PATH = RAW_DIR / "bronze_data.csv"
+BRONZE_GSOD_PATH = RAW_DIR / "gsod" / "bronze_data.csv"
 ERA5_SINGLE_PATH = CLEAN_DIR / "ERA5_single_level.parquet"
 ENSO_PATH = CLEAN_DIR / ENSO_FILE_NAME
 SILVER_OUTPUT_PATH = CLEAN_DIR / SILVER_OUTPUT_NAME
 
+REPORT_DIR = REPORT_ROOT_DIR / "silver"
+PLOT_DIR = REPORT_DIR / "plots"
+
 
 def ensure_directories() -> None:
-    """Create output/report directories before writing files."""
+    """Create output/report folders."""
     CLEAN_DIR.mkdir(parents=True, exist_ok=True)
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
-    (REPORT_DIR / "plots").mkdir(parents=True, exist_ok=True)
+    PLOT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def resolve_pressure_path() -> Path:
@@ -162,15 +181,16 @@ def resolve_pressure_path() -> Path:
         path = CLEAN_DIR / name
         if path.exists():
             return path
+
     raise FileNotFoundError(
         "Could not find pressure-level parquet. Expected one of: "
         + ", ".join(str(CLEAN_DIR / name) for name in PRESSURE_FILE_CANDIDATES)
     )
 
 
-# ============================================================================
+# =============================================================================
 # BASIC UTILITIES
-# ============================================================================
+# =============================================================================
 
 def _safe_to_datetime(series: pd.Series) -> pd.Series:
     return pd.to_datetime(series, errors="coerce")
@@ -211,6 +231,7 @@ def _numeric_summary(df: pd.DataFrame, columns: Iterable[str]) -> pd.DataFrame:
             "p95": float(s.quantile(0.95)) if s.notna().any() else np.nan,
             "max": float(s.max()) if s.notna().any() else np.nan,
         })
+
     return pd.DataFrame(rows)
 
 
@@ -221,6 +242,7 @@ def _aggregate_duplicate_era5_rows(df: pd.DataFrame, name: str) -> pd.DataFrame:
     """
     keys = ["time", "latitude", "longitude"]
     duplicate_count = int(df.duplicated(subset=keys).sum())
+
     if duplicate_count == 0:
         return df
 
@@ -233,6 +255,7 @@ def _aggregate_duplicate_era5_rows(df: pd.DataFrame, name: str) -> pd.DataFrame:
         col for col in df.select_dtypes(include=[np.number]).columns
         if col not in ["latitude", "longitude"]
     ]
+
     agg_map = {col: "mean" for col in numeric_cols}
     for col in df.columns:
         if col not in keys and col not in agg_map:
@@ -241,21 +264,24 @@ def _aggregate_duplicate_era5_rows(df: pd.DataFrame, name: str) -> pd.DataFrame:
     return df.groupby(keys, as_index=False).agg(agg_map)
 
 
-# ============================================================================
-# STEP 1: GSOD CLEANING
-# ============================================================================
+# =============================================================================
+# STEP 5.1 - GSOD CLEANING
+# =============================================================================
 
 def _ensure_required_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Ensure all expected GSOD columns exist."""
+    """Ensure all expected GSOD columns exist and keep them in a stable order."""
     for col in ALL_COLS:
         if col not in df.columns:
             df[col] = np.nan
+
     return df[ALL_COLS].copy()
 
 
 def _remove_duplicates(df: pd.DataFrame) -> pd.DataFrame:
     """Remove duplicate records per station-date."""
+    df = df.copy()
     df["DATE"] = _safe_to_datetime(df["DATE"])
+
     before = len(df)
     df = df.drop_duplicates(subset=["STATION", "DATE"]).reset_index(drop=True)
     after = len(df)
@@ -268,57 +294,66 @@ def _remove_duplicates(df: pd.DataFrame) -> pd.DataFrame:
 
 def _remove_rogue_values(df: pd.DataFrame) -> pd.DataFrame:
     """Replace GSOD error codes with NaN."""
+    out = df.copy()
+
     for col, error_val in ROGUE_MAPPING.items():
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-            df.loc[np.isclose(df[col], error_val, atol=0.001), col] = np.nan
-    return df
+        if col in out.columns:
+            out[col] = pd.to_numeric(out[col], errors="coerce")
+            out.loc[np.isclose(out[col], error_val, atol=0.001), col] = np.nan
+
+    return out
 
 
 def _validate_pressure(df: pd.DataFrame) -> pd.DataFrame:
     """Replace physically invalid pressure values with NaN."""
-    if "STP" in df.columns:
-        df.loc[~df["STP"].between(PRESSURE_MIN, PRESSURE_MAX), "STP"] = np.nan
-    if "SLP" in df.columns:
-        df.loc[~df["SLP"].between(PRESSURE_MIN, PRESSURE_MAX), "SLP"] = np.nan
-    return df
+    out = df.copy()
+
+    if "STP" in out.columns:
+        out.loc[~out["STP"].between(PRESSURE_MIN, PRESSURE_MAX), "STP"] = np.nan
+
+    if "SLP" in out.columns:
+        out.loc[~out["SLP"].between(PRESSURE_MIN, PRESSURE_MAX), "SLP"] = np.nan
+
+    return out
 
 
 def _convert_to_metric(df: pd.DataFrame) -> pd.DataFrame:
     """Convert GSOD variables to metric units."""
+    out = df.copy()
+
     for col, conversion in UNIT_CONVERSIONS.items():
-        if col in df.columns:
-            df[col] = (df[col] + conversion["offset"]) * conversion["factor"]
-    return df
+        if col in out.columns:
+            out[col] = (out[col] + conversion["offset"]) * conversion["factor"]
+
+    return out
 
 
 def _basic_physical_cleaning(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Apply minimal physical sanity checks after unit conversion.
-    These do not impute values; invalid values are marked as missing.
-    """
-    if "PRCP" in df.columns:
-        df.loc[df["PRCP"] < PRCP_MIN_MM, "PRCP"] = np.nan
-    if "TEMP" in df.columns:
-        df.loc[~df["TEMP"].between(TEMP_MIN_C, TEMP_MAX_C), "TEMP"] = np.nan
-    if "DEWP" in df.columns:
-        df.loc[~df["DEWP"].between(TEMP_MIN_C, TEMP_MAX_C), "DEWP"] = np.nan
-    if {"TEMP", "DEWP"}.issubset(df.columns):
-        # Dew point should not be materially higher than air temperature.
-        df.loc[df["DEWP"] > df["TEMP"] + 2.0, "DEWP"] = np.nan
-    return df
+    """Apply minimal physical sanity checks after unit conversion."""
+    out = df.copy()
+
+    if "PRCP" in out.columns:
+        out.loc[out["PRCP"] < PRCP_MIN_MM, "PRCP"] = np.nan
+
+    if "TEMP" in out.columns:
+        out.loc[~out["TEMP"].between(TEMP_MIN_C, TEMP_MAX_C), "TEMP"] = np.nan
+
+    if "DEWP" in out.columns:
+        out.loc[~out["DEWP"].between(TEMP_MIN_C, TEMP_MAX_C), "DEWP"] = np.nan
+
+    if {"TEMP", "DEWP"}.issubset(out.columns):
+        out.loc[out["DEWP"] > out["TEMP"] + 2.0, "DEWP"] = np.nan
+
+    return out
 
 
 def load_and_clean_gsod(path: Path = BRONZE_GSOD_PATH) -> pd.DataFrame:
-    """
-    Load and clean GSOD station observations.
-
-    This stage standardizes raw GSOD records but does not impute missing values.
-    """
+    """Load and standardize GSOD station observations."""
     if not path.exists():
         raise FileNotFoundError(f"GSOD bronze file not found: {path}")
 
     print("\n=== STEP 5.1: Loading and standardizing GSOD observations ===")
+
     df = pd.read_csv(path)
     df = _ensure_required_columns(df)
     df["STATION"] = df["STATION"].astype(str)
@@ -329,23 +364,23 @@ def load_and_clean_gsod(path: Path = BRONZE_GSOD_PATH) -> pd.DataFrame:
     df = _convert_to_metric(df)
     df = _basic_physical_cleaning(df)
 
-    # Keep a flag for observed GSOD rows before building a complete panel.
+    # Keep this only for audit/reporting. It is removed from final Silver.
     df["has_gsod_record"] = True
 
     return df
 
 
-# Backward-compatible function name from the old script.
+# Backward-compatible alias from the reference script.
 def gsod(path: str | Path | None = None) -> pd.DataFrame:
     return load_and_clean_gsod(Path(path) if path is not None else BRONZE_GSOD_PATH)
 
 
-# ============================================================================
-# STEP 2: MISSINGNESS DIAGNOSIS BEFORE IMPUTATION
-# ============================================================================
+# =============================================================================
+# STEP 5.2 - MISSINGNESS DIAGNOSIS
+# =============================================================================
 
 def prepare_station_grid(df: pd.DataFrame) -> pd.DataFrame:
-    """Rename DATE to time and quantize station coordinates to ERA5 grid."""
+    """Rename DATE to time and quantize station coordinates to ERA5 0.25° grid."""
     out = df.copy()
     out = out.rename(columns={"DATE": "time"})
     out["time"] = _safe_to_datetime(out["time"])
@@ -355,15 +390,7 @@ def prepare_station_grid(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def diagnose_missingness_before_imputation(df: pd.DataFrame) -> None:
-    """
-    Save missingness diagnostics before any imputation is performed.
-
-    This does not prove MCAR/MAR/MNAR completely, but it provides evidence:
-    - missingness by variable
-    - missingness by station
-    - missingness by month
-    - correlation between missing indicators and time/month/location signals
-    """
+    """Save missingness diagnostics before any imputation."""
     ensure_directories()
     print("\n=== STEP 5.2: Diagnosing missingness before imputation ===")
 
@@ -376,8 +403,8 @@ def diagnose_missingness_before_imputation(df: pd.DataFrame) -> None:
     )
 
     station_rows = []
-    for station, group in working.groupby("STATION"):
-        row = {"STATION": station, "n_rows": int(len(group))}
+    for station, group in working.groupby("STATION", dropna=False):
+        row = {"STATION": str(station), "n_rows": int(len(group))}
         for col in weather_cols:
             row[f"{col}_missing_rate"] = float(group[col].isna().mean())
         station_rows.append(row)
@@ -391,7 +418,10 @@ def diagnose_missingness_before_imputation(df: pd.DataFrame) -> None:
     working["MONTH"] = working["time"].dt.month
 
     month_rows = []
-    for (year, month), group in working.groupby(["YEAR", "MONTH"]):
+    for (year, month), group in working.groupby(["YEAR", "MONTH"], dropna=False):
+        if pd.isna(year) or pd.isna(month):
+            continue
+
         row = {"YEAR": int(year), "MONTH": int(month), "n_rows": int(len(group))}
         for col in weather_cols:
             row[f"{col}_missing_rate"] = float(group[col].isna().mean())
@@ -402,86 +432,19 @@ def diagnose_missingness_before_imputation(df: pd.DataFrame) -> None:
         index=False,
     )
 
-    # Simple MAR-oriented signals: whether missingness correlates with month,
-    # grid coordinates, or time index. This is diagnostic, not a formal proof.
-    signal_df = working[["time", "MONTH", "latitude", "longitude"]].copy()
-    signal_df["time_ordinal"] = working["time"].map(lambda x: x.toordinal() if pd.notna(x) else np.nan)
-
-    rows = []
-    for col in weather_cols:
-        indicator = working[col].isna().astype(float)
-        for signal in ["time_ordinal", "MONTH", "latitude", "longitude"]:
-            if signal_df[signal].notna().sum() > 2:
-                corr = pd.concat([indicator, signal_df[signal]], axis=1).corr(method="spearman").iloc[0, 1]
-            else:
-                corr = np.nan
-            rows.append({
-                "missing_variable": col,
-                "signal": signal,
-                "spearman_corr_with_missing_indicator": float(corr) if pd.notna(corr) else np.nan,
-            })
-
-    pd.DataFrame(rows).to_csv(
-        REPORT_DIR / "missingness_indicator_signal_correlation.csv",
+    _numeric_summary(working, weather_cols).to_csv(
+        REPORT_DIR / "weather_numeric_summary_before_imputation.csv",
         index=False,
     )
 
-    _plot_missingness_diagnostics(working, weather_cols)
 
-
-def _plot_missingness_diagnostics(df: pd.DataFrame, weather_cols: List[str]) -> None:
-    """Save missingness plots for report/EDA."""
-    try:
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-    except Exception as exc:
-        warnings.warn(f"Matplotlib not available. Skipping missingness plots. Error: {exc}")
-        return
-
-    plot_dir = REPORT_DIR / "plots"
-    plot_dir.mkdir(parents=True, exist_ok=True)
-
-    # Plot 1: missing rate by variable
-    missing = df[weather_cols].isna().mean().sort_values(ascending=True)
-    plt.figure(figsize=(8, 4.8))
-    plt.barh(missing.index, missing.values)
-    plt.xlabel("Missing rate")
-    plt.title("Missing Rate by Variable Before Imputation")
-    plt.tight_layout()
-    plt.savefig(plot_dir / "missing_rate_by_variable_before_imputation.png", dpi=200)
-    plt.close()
-
-    # Plot 2: monthly missing rate of key variables
-    tmp = df.copy()
-    tmp["month_period"] = tmp["time"].dt.to_period("M").astype(str)
-
-    key_cols = [col for col in ["PRCP", "TEMP", "DEWP", "VISIB", "STP", "SLP"] if col in weather_cols]
-    if key_cols:
-        monthly = tmp.groupby("month_period")[key_cols].apply(lambda x: x.isna().mean())
-        plt.figure(figsize=(10, 5))
-        for col in key_cols:
-            plt.plot(monthly.index, monthly[col], label=col)
-        plt.xticks(rotation=90, fontsize=6)
-        plt.ylabel("Missing rate")
-        plt.title("Monthly Missingness Before Imputation")
-        plt.legend()
-        plt.tight_layout()
-        plt.savefig(plot_dir / "monthly_missingness_before_imputation.png", dpi=200)
-        plt.close()
-
-
-# ============================================================================
-# STEP 3: BUILD COMPLETE PANEL AND MERGE ERA5
-# ============================================================================
+# =============================================================================
+# STEP 5.3 - COMPLETE PANEL AND SINGLE-LEVEL MERGE
+# =============================================================================
 
 def build_complete_station_date_panel(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Create one row per station per day for the full study period.
-
-    This is better than only appending missing ERA5 rows because it makes the
-    target panel explicit and auditable.
-    """
+    """Create one row per station per day for the full study period."""
+    ensure_directories()
     print("\n=== STEP 5.3: Building complete station-date panel ===")
 
     prepared = prepare_station_grid(df)
@@ -493,6 +456,9 @@ def build_complete_station_date_panel(df: pd.DataFrame) -> pd.DataFrame:
         .reset_index(drop=True)
     )
 
+    if station_meta.empty:
+        raise ValueError("No station metadata found after GSOD cleaning.")
+
     panels = []
     for _, row in station_meta.iterrows():
         panel = pd.DataFrame({"time": full_dates})
@@ -502,7 +468,10 @@ def build_complete_station_date_panel(df: pd.DataFrame) -> pd.DataFrame:
 
     panel_df = pd.concat(panels, ignore_index=True)
 
-    obs_cols = ["STATION", "time", "has_gsod_record"] + [col for col in WEATHER_COLS if col in prepared.columns]
+    obs_cols = ["STATION", "time", "has_gsod_record"] + [
+        col for col in WEATHER_COLS if col in prepared.columns
+    ]
+
     observed = prepared[obs_cols].copy()
 
     complete = pd.merge(
@@ -511,11 +480,12 @@ def build_complete_station_date_panel(df: pd.DataFrame) -> pd.DataFrame:
         on=["STATION", "time"],
         how="left",
     )
+
     complete["has_gsod_record"] = complete["has_gsod_record"].fillna(False).astype(bool)
 
     duplicate_count = int(complete.duplicated(subset=["STATION", "time"]).sum())
     if duplicate_count > 0:
-        raise AssertionError(f"Complete station-date panel has {duplicate_count} duplicated rows.")
+        raise AssertionError(f"Complete station-date panel has {duplicate_count} duplicate rows.")
 
     panel_report = {
         "start_date": DATA_START_DATE,
@@ -538,7 +508,11 @@ def load_era5_single_level(path: Path = ERA5_SINGLE_PATH) -> pd.DataFrame:
         raise FileNotFoundError(f"ERA5 single-level file not found: {path}")
 
     era5 = pd.read_parquet(path)
+    if "time" not in era5.columns:
+        raise ValueError("ERA5 single-level data must contain a `time` column.")
+
     era5["time"] = _safe_to_datetime(era5["time"])
+    era5 = era5.dropna(subset=["time", "latitude", "longitude"]).copy()
     era5 = _aggregate_duplicate_era5_rows(era5, "ERA5 single-level")
 
     return era5
@@ -556,37 +530,39 @@ def merge_era5_single_level(panel: pd.DataFrame, era5: pd.DataFrame) -> pd.DataF
         suffixes=("", "_era5"),
     )
 
+    single_cols = [c for c in era5.columns if c not in ["time", "latitude", "longitude"]]
+    _missing_rate_by_column(merged[single_cols]).to_csv(
+        REPORT_DIR / "single_level_missing_after_merge.csv",
+        index=False,
+    )
+
     return merged
 
 
-# ============================================================================
-# STEP 4: DISTRIBUTION AND OVERLAP DIAGNOSTICS
-# ============================================================================
+# =============================================================================
+# STEP 5.4 - OVERLAP COMPARISON
+# =============================================================================
 
 def compare_gsod_with_era5_overlap(df_with_era5: pd.DataFrame) -> pd.DataFrame:
-    """
-    Compare GSOD observed values and ERA5 values on overlapping station-days.
-
-    This provides evidence that ERA5 imputation is not arbitrary.
-    """
+    """Compare observed GSOD values with ERA5 values on overlapping days."""
     print("\n=== STEP 5.5: Comparing GSOD observations with ERA5 overlap ===")
 
+    working = df_with_era5.copy()
     rows = []
 
-    # Add ERA5 wind speed for WDSP comparison if available.
-    if {"u10", "v10"}.issubset(df_with_era5.columns):
-        df_with_era5 = df_with_era5.copy()
-        df_with_era5["era5_wind_speed_10m"] = np.sqrt(df_with_era5["u10"] ** 2 + df_with_era5["v10"] ** 2)
+    if {"u10", "v10"}.issubset(working.columns):
+        working["era5_wind_speed_10m"] = np.sqrt(working["u10"] ** 2 + working["v10"] ** 2)
 
     mapping = dict(ERA5_FILL_MAPPING)
-    if "era5_wind_speed_10m" in df_with_era5.columns:
+    if "era5_wind_speed_10m" in working.columns:
         mapping["WDSP"] = "era5_wind_speed_10m"
 
     for gsod_col, era5_col in mapping.items():
-        if gsod_col not in df_with_era5.columns or era5_col not in df_with_era5.columns:
+        if gsod_col not in working.columns or era5_col not in working.columns:
             continue
 
-        pair = df_with_era5[[gsod_col, era5_col]].dropna()
+        pair = working[[gsod_col, era5_col]].dropna()
+
         if pair.empty:
             rows.append({
                 "variable": gsod_col,
@@ -596,6 +572,7 @@ def compare_gsod_with_era5_overlap(df_with_era5: pd.DataFrame) -> pd.DataFrame:
             continue
 
         diff = pair[era5_col] - pair[gsod_col]
+
         rows.append({
             "variable": gsod_col,
             "era5_column": era5_col,
@@ -616,72 +593,24 @@ def compare_gsod_with_era5_overlap(df_with_era5: pd.DataFrame) -> pd.DataFrame:
     report = pd.DataFrame(rows)
     report.to_csv(REPORT_DIR / "gsod_vs_era5_overlap_comparison.csv", index=False)
 
-    _plot_gsod_vs_era5_overlap(df_with_era5, mapping)
-
     return report
 
 
-def _plot_gsod_vs_era5_overlap(df: pd.DataFrame, mapping: Dict[str, str]) -> None:
-    """Save overlap distribution plots."""
-    try:
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-    except Exception as exc:
-        warnings.warn(f"Matplotlib not available. Skipping overlap plots. Error: {exc}")
-        return
-
-    plot_dir = REPORT_DIR / "plots"
-    plot_dir.mkdir(parents=True, exist_ok=True)
-
-    for gsod_col, era5_col in mapping.items():
-        if gsod_col not in df.columns or era5_col not in df.columns:
-            continue
-
-        pair = df[[gsod_col, era5_col]].dropna()
-        if pair.empty:
-            continue
-
-        # Use log transform for precipitation due to heavy skew.
-        if gsod_col == "PRCP":
-            x1 = np.log1p(pair[gsod_col])
-            x2 = np.log1p(pair[era5_col])
-            xlabel = "log(1 + precipitation mm)"
-        else:
-            x1 = pair[gsod_col]
-            x2 = pair[era5_col]
-            xlabel = gsod_col
-
-        plt.figure(figsize=(7, 4.5))
-        plt.hist(x1, bins=50, alpha=0.55, label=f"GSOD {gsod_col}")
-        plt.hist(x2, bins=50, alpha=0.55, label=f"ERA5 {era5_col}")
-        plt.xlabel(xlabel)
-        plt.ylabel("Frequency")
-        plt.title(f"GSOD vs ERA5 Distribution: {gsod_col}")
-        plt.legend()
-        plt.tight_layout()
-        plt.savefig(plot_dir / f"gsod_vs_era5_distribution_{gsod_col}.png", dpi=200)
-        plt.close()
-
-
-# ============================================================================
-# STEP 5: IMPUTATION
-# ============================================================================
+# =============================================================================
+# STEP 5.5 - IMPUTATION
+# =============================================================================
 
 def fill_from_era5_and_interpolate(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Fill missing GSOD variables using ERA5 and group-wise interpolation.
+    Fill missing GSOD-like variables using ERA5 and group-wise interpolation.
 
-    Important:
-    - Numeric variables with ERA5 equivalents are filled from ERA5.
-    - VISIB is interpolated WITHIN station/grid groups only.
-    - Source flags are stored for auditability.
+    Source flags are kept temporarily for audit reports, then dropped from final
+    Silver output.
     """
     print("\n=== STEP 5.6: Filling missing values with ERA5 and group-wise interpolation ===")
 
     out = df.sort_values(GROUPBY_GRID_COLS + ["time"]).reset_index(drop=True).copy()
 
-    # ERA5 wind speed for filling GSOD WDSP.
     if FILL_WDSP_FROM_ERA5_UV and {"u10", "v10"}.issubset(out.columns):
         out["era5_wind_speed_10m"] = np.sqrt(out["u10"] ** 2 + out["v10"] ** 2)
 
@@ -692,6 +621,7 @@ def fill_from_era5_and_interpolate(df: pd.DataFrame) -> pd.DataFrame:
     for target_col, source_col in fill_mapping.items():
         if target_col not in out.columns:
             out[target_col] = np.nan
+
         if source_col not in out.columns:
             warnings.warn(f"ERA5 source column {source_col} not found. Cannot fill {target_col}.")
             out[f"{target_col}_source"] = np.where(out[target_col].notna(), "GSOD", "MISSING")
@@ -708,7 +638,6 @@ def fill_from_era5_and_interpolate(df: pd.DataFrame) -> pd.DataFrame:
 
         out[target_col] = out[target_col].fillna(out[source_col])
 
-    # Group-wise interpolation for visibility.
     for col in GROUPWISE_INTERPOLATION_COLS:
         if col not in out.columns:
             continue
@@ -732,27 +661,30 @@ def compare_distribution_before_after_fill(
     before_panel: pd.DataFrame,
     after_fill: pd.DataFrame,
 ) -> pd.DataFrame:
-    """
-    Compare distributions before and after imputation.
-
-    The comparison has three views:
-    - GSOD observed distribution before filling
-    - Final distribution after filling
-    - Filled-only distribution for rows/values supplied by ERA5/interpolation
-    """
+    """Compare distributions before and after imputation."""
     print("\n=== STEP 5.7: Comparing distributions before and after imputation ===")
 
     rows = []
     variables = [col for col in WEATHER_COLS if col in after_fill.columns]
 
     for col in variables:
-        before_values = pd.to_numeric(before_panel[col], errors="coerce") if col in before_panel.columns else pd.Series(dtype=float)
+        before_values = (
+            pd.to_numeric(before_panel[col], errors="coerce")
+            if col in before_panel.columns
+            else pd.Series(dtype=float)
+        )
         after_values = pd.to_numeric(after_fill[col], errors="coerce")
 
         source_col = f"{col}_source"
         if source_col in after_fill.columns:
-            filled_values = pd.to_numeric(after_fill.loc[after_fill[source_col] != "GSOD", col], errors="coerce")
-            era5_values = pd.to_numeric(after_fill.loc[after_fill[source_col] == "ERA5", col], errors="coerce")
+            filled_values = pd.to_numeric(
+                after_fill.loc[after_fill[source_col] != "GSOD", col],
+                errors="coerce",
+            )
+            era5_values = pd.to_numeric(
+                after_fill.loc[after_fill[source_col] == "ERA5", col],
+                errors="coerce",
+            )
         else:
             filled_values = pd.Series(dtype=float)
             era5_values = pd.Series(dtype=float)
@@ -783,189 +715,60 @@ def compare_distribution_before_after_fill(
     report = pd.DataFrame(rows)
     report.to_csv(REPORT_DIR / "distribution_before_after_imputation.csv", index=False)
 
-    _plot_before_after_imputation(before_panel, after_fill, variables)
-
     return report
 
 
-def _plot_before_after_imputation(
-    before_panel: pd.DataFrame,
-    after_fill: pd.DataFrame,
-    variables: List[str],
-) -> None:
-    """Save distribution and time-series diagnostic plots."""
-    try:
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-    except Exception as exc:
-        warnings.warn(f"Matplotlib not available. Skipping before/after plots. Error: {exc}")
-        return
-
-    plot_dir = REPORT_DIR / "plots"
-    plot_dir.mkdir(parents=True, exist_ok=True)
-
-    for col in variables:
-        before = pd.to_numeric(before_panel[col], errors="coerce").dropna() if col in before_panel.columns else pd.Series(dtype=float)
-        after = pd.to_numeric(after_fill[col], errors="coerce").dropna()
-
-        if before.empty or after.empty:
-            continue
-
-        if col == "PRCP":
-            before_plot = np.log1p(before)
-            after_plot = np.log1p(after)
-            xlabel = "log(1 + PRCP mm)"
-        else:
-            before_plot = before
-            after_plot = after
-            xlabel = col
-
-        plt.figure(figsize=(7, 4.5))
-        plt.hist(before_plot, bins=50, alpha=0.55, label="GSOD observed before fill")
-        plt.hist(after_plot, bins=50, alpha=0.55, label="After fill")
-        plt.xlabel(xlabel)
-        plt.ylabel("Frequency")
-        plt.title(f"Before vs After Imputation: {col}")
-        plt.legend()
-        plt.tight_layout()
-        plt.savefig(plot_dir / f"before_after_imputation_distribution_{col}.png", dpi=200)
-        plt.close()
-
-    # Time-series before/after for the first station, monthly mean.
-    if "STATION" in after_fill.columns and "time" in after_fill.columns:
-        first_station = str(after_fill["STATION"].dropna().iloc[0]) if after_fill["STATION"].notna().any() else None
-        if first_station:
-            for col in [c for c in ["PRCP", "TEMP", "VISIB"] if c in after_fill.columns]:
-                before_s = before_panel[before_panel["STATION"].astype(str) == first_station].copy()
-                after_s = after_fill[after_fill["STATION"].astype(str) == first_station].copy()
-                before_s["month"] = pd.to_datetime(before_s["time"]).dt.to_period("M").dt.to_timestamp()
-                after_s["month"] = pd.to_datetime(after_s["time"]).dt.to_period("M").dt.to_timestamp()
-
-                b = before_s.groupby("month")[col].mean()
-                a = after_s.groupby("month")[col].mean()
-
-                plt.figure(figsize=(10, 4))
-                plt.plot(b.index, b.values, label="Before fill")
-                plt.plot(a.index, a.values, label="After fill")
-                plt.xlabel("Time")
-                plt.ylabel(col)
-                plt.title(f"Monthly Mean Before/After Fill - {col} - Station {first_station}")
-                plt.legend()
-                plt.tight_layout()
-                plt.savefig(plot_dir / f"time_series_before_after_{col}_station_{first_station}.png", dpi=200)
-                plt.close()
-
-
-# ============================================================================
-# STEP 6: DROP POLICY AND FINAL CLEANUP
-# ============================================================================
-
-def create_drop_rationale_table(keep_auxiliary_era5: bool = KEEP_AUXILIARY_ERA5) -> pd.DataFrame:
+def save_source_coverage_report(df_with_source_flags: pd.DataFrame) -> None:
     """
-    Create a transparent table explaining which columns are removed and why.
+    Save how many values came from GSOD, ERA5, interpolation, or remain missing.
+
+    This must be called before final source flags are dropped.
     """
     rows = []
+    total = len(df_with_source_flags)
 
-    for col in DUPLICATE_ERA5_SOURCE_COLS:
-        rows.append({
-            "column": col,
-            "action": "drop",
-            "reason": (
-                "Duplicate ERA5 source column after being used to fill standardized "
-                "GSOD-like columns TEMP/PRCP/DEWP/STP/SLP. Source flag columns "
-                "preserve whether the value came from GSOD or ERA5."
-            ),
-        })
+    for col in WEATHER_COLS:
+        source_col = f"{col}_source"
+        if source_col not in df_with_source_flags.columns:
+            continue
 
-    rows.append({
-        "column": "era5_wind_speed_10m",
-        "action": "drop",
-        "reason": (
-            "Temporary derived helper used to fill WDSP from ERA5 u10/v10. "
-            "Original u10 and v10 can be retained as auxiliary wind components."
-        ),
-    })
+        counts = df_with_source_flags[source_col].value_counts(dropna=False)
 
-    rows.extend([
-        {"column": "latitude", "action": "drop", "reason": "Temporary ERA5 grid latitude. Original station LATITUDE is retained."},
-        {"column": "longitude", "action": "drop", "reason": "Temporary ERA5 grid longitude. Original station LONGITUDE is retained."},
-        {"column": "month_index", "action": "drop if present", "reason": "Technical ENSO merge helper, not needed in final daily silver table."},
-    ])
-
-    if not keep_auxiliary_era5:
-        for col in AUXILIARY_ERA5_COLS:
+        for source, count in counts.items():
             rows.append({
-                "column": col,
-                "action": "drop",
-                "reason": "Auxiliary ERA5 variable removed because KEEP_AUXILIARY_ERA5=False.",
-            })
-    else:
-        for col in AUXILIARY_ERA5_COLS:
-            rows.append({
-                "column": col,
-                "action": "keep if present",
-                "reason": (
-                    "Auxiliary ERA5 variable retained because it may support EDA "
-                    "or downstream feature engineering."
-                ),
+                "variable": col,
+                "source": str(source),
+                "count": int(count),
+                "rate": float(count / total) if total else np.nan,
             })
 
-    table = pd.DataFrame(rows)
-    table.to_csv(REPORT_DIR / "dropped_columns_rationale.csv", index=False)
-    return table
+    pd.DataFrame(rows).to_csv(REPORT_DIR / "value_source_coverage.csv", index=False)
 
 
-def finalize_silver_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Remove duplicate/temp columns with rationale and round numeric values.
-    """
-    create_drop_rationale_table(KEEP_AUXILIARY_ERA5)
-
-    cols_to_drop = list(DUPLICATE_ERA5_SOURCE_COLS) + [
-        "era5_wind_speed_10m",
-        "latitude",
-        "longitude",
-        "month_index",
-    ]
-
-    if not KEEP_AUXILIARY_ERA5:
-        cols_to_drop.extend(AUXILIARY_ERA5_COLS)
-
-    out = df.drop(columns=cols_to_drop, errors="ignore").copy()
-
-    # Keep datetime as ISO string for CSV stability.
-    out["time"] = _safe_to_datetime(out["time"])
-
-    # Sort for reproducibility.
-    sort_cols = [c for c in ["STATION", "time"] if c in out.columns]
-    out = out.sort_values(sort_cols).reset_index(drop=True)
-
-    # Round numeric values for stable CSV size/readability.
-    numeric_cols = out.select_dtypes(include=[np.number]).columns
-    out[numeric_cols] = out[numeric_cols].round(4)
-
-    return out
-
-
-# ============================================================================
-# STEP 7: MERGE ENSO AND PRESSURE
-# ============================================================================
+# =============================================================================
+# STEP 5.6 - ENSO AND PRESSURE MERGE
+# =============================================================================
 
 def merge_enso_data(df: pd.DataFrame, enso_path: Path = ENSO_PATH) -> pd.DataFrame:
     """Merge ENSO by YEAR/MONTH using left join to avoid silently dropping rows."""
     if not enso_path.exists():
-        raise FileNotFoundError(f"ENSO file not found: {enso_path}")
+        raise FileNotFoundError(f"ENSO clean file not found: {enso_path}")
 
     print("\n=== STEP 5.8: Merging ENSO climate index ===")
 
     out = df.copy()
-    out["YEAR"] = pd.to_datetime(out["time"]).dt.year
-    out["MONTH"] = pd.to_datetime(out["time"]).dt.month
+    out["YEAR"] = pd.to_datetime(out["time"], errors="coerce").dt.year
+    out["MONTH"] = pd.to_datetime(out["time"], errors="coerce").dt.month
 
     enso = pd.read_csv(enso_path)
-    enso_cols = [c for c in enso.columns if c not in ["month_index"]]
-    enso = enso[enso_cols]
+
+    required = {"YEAR", "MONTH"}
+    if not required.issubset(enso.columns):
+        raise ValueError(f"ENSO file must contain columns {required}.")
+
+    # month_index is a technical helper; MEI_WINDOW is audit label and later dropped.
+    enso_cols = [col for col in enso.columns if col not in ["month_index"]]
+    enso = enso[enso_cols].copy()
 
     out = pd.merge(out, enso, how="left", on=["YEAR", "MONTH"])
 
@@ -989,7 +792,19 @@ def merge_pressure_data(df: pd.DataFrame) -> pd.DataFrame:
 
     pressure_path = resolve_pressure_path()
     pressure = pd.read_parquet(pressure_path)
+
+    if "time" not in pressure.columns:
+        raise ValueError("Pressure-level data must contain a `time` column.")
+
     pressure["time"] = _safe_to_datetime(pressure["time"])
+    pressure = pressure.dropna(subset=["time", "latitude", "longitude"]).copy()
+
+    # Clip to the study period for consistency, especially if raw batch includes 2025.
+    pressure = pressure[
+        (pressure["time"] >= DATA_START_DATE) &
+        (pressure["time"] <= DATA_END_DATE)
+    ].copy()
+
     pressure = _aggregate_duplicate_era5_rows(pressure, "ERA5 pressure-level")
 
     out = pd.merge(
@@ -1000,91 +815,224 @@ def merge_pressure_data(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     pressure_cols = [c for c in pressure.columns if c not in ["time", "latitude", "longitude"]]
-    pressure_missing = _missing_rate_by_column(out[pressure_cols]) if pressure_cols else pd.DataFrame()
-    pressure_missing.to_csv(REPORT_DIR / "pressure_missing_after_merge.csv", index=False)
+    if pressure_cols:
+        _missing_rate_by_column(out[pressure_cols]).to_csv(
+            REPORT_DIR / "pressure_missing_after_merge.csv",
+            index=False,
+        )
 
     return out
 
 
-# Backward-compatible function name from the old script.
+# Backward-compatible alias from the reference script.
 def merge_file(df: pd.DataFrame) -> pd.DataFrame:
-    df = merge_enso_data(df)
-    df = merge_pressure_data(df)
-    return finalize_silver_columns(df)
+    merged = merge_enso_data(df)
+    merged = merge_pressure_data(merged)
+    return finalize_silver_columns(merged)
 
 
-# ============================================================================
-# VALIDATION AND METADATA
-# ============================================================================
+# =============================================================================
+# STEP 5.7 - FINAL CLEANUP, VALIDATION, METADATA
+# =============================================================================
+
+def create_drop_rationale_table() -> pd.DataFrame:
+    """Create a transparent table explaining removed columns."""
+    rows = []
+
+    for col in DUPLICATE_ERA5_SOURCE_COLS:
+        rows.append({
+            "column": col,
+            "action": "drop",
+            "reason": (
+                "Duplicate ERA5 source column after values are used to fill "
+                "standardized GSOD-like weather columns."
+            ),
+        })
+
+    rows.extend([
+        {
+            "column": "era5_wind_speed_10m",
+            "action": "drop",
+            "reason": "Temporary helper used to fill WDSP from u10/v10.",
+        },
+        {
+            "column": "latitude",
+            "action": "drop",
+            "reason": "Temporary ERA5 grid latitude; station LATITUDE is retained.",
+        },
+        {
+            "column": "longitude",
+            "action": "drop",
+            "reason": "Temporary ERA5 grid longitude; station LONGITUDE is retained.",
+        },
+        {
+            "column": "month_index",
+            "action": "drop",
+            "reason": "Technical ENSO helper column.",
+        },
+        {
+            "column": "*_source and has_gsod_record",
+            "action": "drop from final Silver, report separately",
+            "reason": (
+                "Audit/source flags are useful for data-quality reports, but they "
+                "are not meteorological variables and should not be used as model features."
+            ),
+        },
+        {
+            "column": "source_period",
+            "action": "drop",
+            "reason": "Raw ERA5 batch label, not a physical predictor.",
+        },
+        {
+            "column": "MEI_WINDOW",
+            "action": "drop",
+            "reason": "ENSO bimonthly label; numeric ENSO variables are retained.",
+        },
+        {
+            "column": "YEAR, MONTH",
+            "action": "drop",
+            "reason": "Redundant date components derivable from time.",
+        },
+        {
+            "column": "all-missing columns, e.g. sst",
+            "action": "drop",
+            "reason": "No useful information for downstream feature engineering.",
+        },
+    ])
+
+    table = pd.DataFrame(rows)
+    table.to_csv(REPORT_DIR / "dropped_columns_rationale.csv", index=False)
+    return table
+
+
+def finalize_silver_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Remove duplicate/temp/audit/source columns and keep a clean Silver dataset.
+
+    Final Silver should contain only:
+    - time/station metadata
+    - standardized GSOD-like weather variables
+    - useful ERA5 single-level variables
+    - ENSO numeric variables
+    - ERA5 pressure-level variables
+    """
+    print("\n=== STEP 5.10: Finalizing clean Silver columns ===")
+
+    create_drop_rationale_table()
+
+    out = df.copy()
+
+    cols_to_drop = (
+        list(DUPLICATE_ERA5_SOURCE_COLS)
+        + [
+            "era5_wind_speed_10m",
+            "latitude",
+            "longitude",
+            "month_index",
+        ]
+        + FINAL_AUDIT_COLS_TO_DROP
+    )
+
+    out = out.drop(columns=cols_to_drop, errors="ignore")
+
+    # Drop columns that are completely missing, e.g. sst.
+    all_missing_cols = [col for col in out.columns if out[col].isna().all()]
+    if all_missing_cols:
+        print(f"Dropping all-missing columns: {all_missing_cols}")
+        out = out.drop(columns=all_missing_cols)
+
+    if "STATION" in out.columns:
+        out["STATION"] = out["STATION"].astype(str)
+
+    if "time" in out.columns:
+        out["time"] = _safe_to_datetime(out["time"])
+
+    sort_cols = [c for c in ["STATION", "time"] if c in out.columns]
+    if sort_cols:
+        out = out.sort_values(sort_cols).reset_index(drop=True)
+
+    numeric_cols = out.select_dtypes(include=[np.number]).columns
+    out[numeric_cols] = out[numeric_cols].round(4)
+
+    return out
+
 
 def validate_silver_dataset(df: pd.DataFrame, strict: bool = True) -> None:
     """Run final structural and physical sanity checks."""
-    print("\n=== STEP 5.10: Validating final silver dataset ===")
+    print("\n=== STEP 5.11: Validating final silver dataset ===")
 
     if {"STATION", "time"}.issubset(df.columns):
         dup = int(df.duplicated(subset=["STATION", "time"]).sum())
         if dup > 0:
-            msg = f"Final silver dataset has {dup:,} duplicate STATION-time rows."
+            msg = f"Final Silver dataset has {dup:,} duplicated STATION-time rows."
+            if strict:
+                raise AssertionError(msg)
+            warnings.warn(msg)
+
+    expected_days = len(pd.date_range(DATA_START_DATE, DATA_END_DATE, freq="D"))
+    if {"STATION", "time"}.issubset(df.columns):
+        n_stations = df["STATION"].nunique()
+        expected_rows = expected_days * n_stations
+        if len(df) != expected_rows:
+            msg = (
+                f"Final Silver should have {expected_rows:,} rows "
+                f"({n_stations} stations × {expected_days} days), got {len(df):,}."
+            )
             if strict:
                 raise AssertionError(msg)
             warnings.warn(msg)
 
     if "PRCP" in df.columns:
-        neg = int((pd.to_numeric(df["PRCP"], errors="coerce") < 0).sum())
-        extreme = int((pd.to_numeric(df["PRCP"], errors="coerce") > PRCP_EXTREME_WARNING_MM).sum())
+        prcp = pd.to_numeric(df["PRCP"], errors="coerce")
+        neg = int((prcp < 0).sum())
+        extreme = int((prcp > PRCP_EXTREME_WARNING_MM).sum())
 
         if neg > 0:
-            msg = f"Final silver dataset has {neg:,} negative precipitation values."
+            msg = f"Final Silver has {neg:,} negative precipitation values."
             if strict:
                 raise AssertionError(msg)
             warnings.warn(msg)
 
         if extreme > 0:
             warnings.warn(
-                f"Final silver dataset has {extreme:,} PRCP values > "
-                f"{PRCP_EXTREME_WARNING_MM} mm. Inspect in EDA; not removed automatically."
+                f"Final Silver has {extreme:,} PRCP values > "
+                f"{PRCP_EXTREME_WARNING_MM} mm. Inspect but not automatically removed."
             )
 
     if {"TEMP", "DEWP"}.issubset(df.columns):
-        violations = int((pd.to_numeric(df["DEWP"], errors="coerce") > pd.to_numeric(df["TEMP"], errors="coerce") + 2.0).sum())
+        temp = pd.to_numeric(df["TEMP"], errors="coerce")
+        dewp = pd.to_numeric(df["DEWP"], errors="coerce")
+        violations = int((dewp > temp + 2.0).sum())
         if violations > 0:
             warnings.warn(
-                f"Final silver dataset has {violations:,} rows where DEWP > TEMP + 2°C. "
-                "These should be inspected."
+                f"Final Silver has {violations:,} rows where DEWP > TEMP + 2°C."
             )
+
+    if {"z_500", "z_850"}.issubset(df.columns):
+        z500 = pd.to_numeric(df["z_500"], errors="coerce")
+        z850 = pd.to_numeric(df["z_850"], errors="coerce")
+        bad_height = int((z500 <= z850).sum())
+        if bad_height > 0:
+            warnings.warn(f"Final Silver has {bad_height:,} rows where z_500 <= z_850.")
 
     final_missing = _missing_rate_by_column(df)
     final_missing.to_csv(REPORT_DIR / "missing_rate_final_silver.csv", index=False)
 
-    _numeric_summary(df, [col for col in WEATHER_COLS if col in df.columns]).to_csv(
-        REPORT_DIR / "weather_numeric_summary_final_silver.csv",
+    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    _numeric_summary(df, numeric_cols).to_csv(
+        REPORT_DIR / "numeric_summary_final_silver.csv",
         index=False,
     )
 
 
-def save_source_coverage_report(df: pd.DataFrame) -> None:
-    """Save how many values came from GSOD, ERA5, interpolation, or remain missing."""
-    rows = []
-    for col in WEATHER_COLS:
-        source_col = f"{col}_source"
-        if source_col not in df.columns:
-            continue
-
-        counts = df[source_col].value_counts(dropna=False)
-        total = len(df)
-        for source, count in counts.items():
-            rows.append({
-                "variable": col,
-                "source": str(source),
-                "count": int(count),
-                "rate": float(count / total) if total else np.nan,
-            })
-
-    pd.DataFrame(rows).to_csv(REPORT_DIR / "value_source_coverage.csv", index=False)
-
-
 def save_silver_metadata(df: pd.DataFrame) -> None:
-    """Save metadata explaining the imputation design and leakage constraints."""
+    """Save metadata explaining integration design and output structure."""
+    pressure_path = None
+    try:
+        pressure_path = str(resolve_pressure_path())
+    except FileNotFoundError:
+        pressure_path = None
+
     metadata = {
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "project_root": str(BASE_DIR),
@@ -1092,7 +1040,7 @@ def save_silver_metadata(df: pd.DataFrame) -> None:
             "bronze_gsod": str(BRONZE_GSOD_PATH),
             "era5_single_level": str(ERA5_SINGLE_PATH),
             "enso": str(ENSO_PATH),
-            "pressure_level": str(resolve_pressure_path()) if any((CLEAN_DIR / n).exists() for n in PRESSURE_FILE_CANDIDATES) else None,
+            "pressure_level": pressure_path,
         },
         "output_file": str(SILVER_OUTPUT_PATH),
         "study_period": {
@@ -1102,6 +1050,7 @@ def save_silver_metadata(df: pd.DataFrame) -> None:
         "n_rows": int(len(df)),
         "n_columns": int(df.shape[1]),
         "n_stations": int(df["STATION"].nunique()) if "STATION" in df.columns else None,
+        "columns": list(df.columns),
         "imputation_policy": {
             "GSOD_like_variables_filled_from_ERA5": ERA5_FILL_MAPPING,
             "WDSP_filled_from_ERA5_uv_wind_speed": FILL_WDSP_FROM_ERA5_UV,
@@ -1109,32 +1058,42 @@ def save_silver_metadata(df: pd.DataFrame) -> None:
                 "Linear interpolation within each STATION-latitude-longitude group. "
                 "No interpolation is performed across different stations."
             ),
-            "source_flags": "Each imputed variable has *_source column where applicable.",
+            "audit_flags_policy": (
+                "Source flags are saved in reports/data_quality/silver/"
+                "value_source_coverage.csv, but removed from final silver_data.csv."
+            ),
         },
+        "final_column_policy": (
+            "Final Silver keeps meteorological variables and station metadata only. "
+            "Audit/source flags, raw batch labels, redundant YEAR/MONTH, technical "
+            "merge columns, and all-missing columns are removed."
+        ),
         "leakage_note": (
             "This Silver dataset is designed as a historical benchmark dataset. "
-            "ERA5 reanalysis uses post-processed information and is acceptable for "
-            "data rescue / historical reconstruction. If the project is framed as "
-            "real-time future forecasting, ERA5 same-day reanalysis values must be "
-            "replaced by forecast products or lagged/available-at-prediction-time "
-            "features to avoid data leakage."
+            "ERA5 reanalysis is acceptable for historical reconstruction and "
+            "data rescue. If the task is real-time future forecasting, same-day "
+            "ERA5 reanalysis variables should be replaced by forecast products "
+            "or lagged/available-at-prediction-time features."
         ),
-        "drop_policy": str(REPORT_DIR / "dropped_columns_rationale.csv"),
         "reports": {
+            "station_date_panel": str(REPORT_DIR / "station_date_panel_report.json"),
             "missingness_before_imputation": str(REPORT_DIR / "missing_rate_before_imputation_by_column.csv"),
             "gsod_vs_era5_overlap": str(REPORT_DIR / "gsod_vs_era5_overlap_comparison.csv"),
             "distribution_before_after_imputation": str(REPORT_DIR / "distribution_before_after_imputation.csv"),
             "source_coverage": str(REPORT_DIR / "value_source_coverage.csv"),
+            "enso_missing_after_merge": str(REPORT_DIR / "enso_missing_after_merge.csv"),
+            "pressure_missing_after_merge": str(REPORT_DIR / "pressure_missing_after_merge.csv"),
             "final_missing_rate": str(REPORT_DIR / "missing_rate_final_silver.csv"),
+            "drop_rationale": str(REPORT_DIR / "dropped_columns_rationale.csv"),
         },
     }
 
     _write_json(metadata, REPORT_DIR / "silver_metadata.json")
 
 
-# ============================================================================
+# =============================================================================
 # MAIN PIPELINE
-# ============================================================================
+# =============================================================================
 
 def build_silver_dataset(
     gsod_path: Path = BRONZE_GSOD_PATH,
@@ -1144,46 +1103,37 @@ def build_silver_dataset(
     """
     End-to-end Silver layer pipeline.
 
-    Output:
-    - data/clean/silver_data_ver2.csv
+    Outputs:
+    - data/clean/silver_data.csv
     - reports/data_quality/silver/*.csv
     - reports/data_quality/silver/*.json
-    - reports/data_quality/silver/plots/*.png
     """
     ensure_directories()
 
-    # 1. Load and standardize GSOD.
     gsod_clean = load_and_clean_gsod(gsod_path)
 
-    # 2. Diagnose missingness BEFORE imputation.
     diagnose_missingness_before_imputation(gsod_clean)
 
-    # 3. Build complete station-date panel.
     panel = build_complete_station_date_panel(gsod_clean)
 
-    # 4. Merge ERA5 single-level.
-    era5 = load_era5_single_level(ERA5_SINGLE_PATH)
-    panel_with_era5 = merge_era5_single_level(panel, era5)
+    era5_single = load_era5_single_level(ERA5_SINGLE_PATH)
+    panel_with_single = merge_era5_single_level(panel, era5_single)
 
-    # 5. Compare observed GSOD and ERA5 overlap before filling.
-    compare_gsod_with_era5_overlap(panel_with_era5)
+    compare_gsod_with_era5_overlap(panel_with_single)
 
-    # 6. Fill missing values.
-    filled = fill_from_era5_and_interpolate(panel_with_era5)
+    filled = fill_from_era5_and_interpolate(panel_with_single)
 
-    # 7. Compare before vs after imputation.
     compare_distribution_before_after_fill(panel, filled)
 
-    # 8. Merge ENSO and pressure-level.
+    # Save source/audit coverage BEFORE dropping *_source flags from final Silver.
+    save_source_coverage_report(filled)
+
     merged = merge_enso_data(filled)
     merged = merge_pressure_data(merged)
 
-    # 9. Finalize.
     final = finalize_silver_columns(merged)
 
-    # 10. Validate and save reports.
     validate_silver_dataset(final, strict=strict_validation)
-    save_source_coverage_report(final)
     save_silver_metadata(final)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1196,20 +1146,20 @@ def build_silver_dataset(
     return final
 
 
+# Backward-compatible wrapper from the reference script.
 def fill_missing(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Backward-compatible wrapper for the old pipeline style.
-
-    Note: This function assumes that `df` is already the cleaned GSOD dataframe.
-    For full reports and final output, prefer `build_silver_dataset()`.
+    Wrapper for older call style. For the full pipeline and reports, use
+    build_silver_dataset().
     """
     diagnose_missingness_before_imputation(df)
     panel = build_complete_station_date_panel(df)
-    era5 = load_era5_single_level(ERA5_SINGLE_PATH)
-    panel_with_era5 = merge_era5_single_level(panel, era5)
-    compare_gsod_with_era5_overlap(panel_with_era5)
-    filled = fill_from_era5_and_interpolate(panel_with_era5)
+    era5_single = load_era5_single_level(ERA5_SINGLE_PATH)
+    panel_with_single = merge_era5_single_level(panel, era5_single)
+    compare_gsod_with_era5_overlap(panel_with_single)
+    filled = fill_from_era5_and_interpolate(panel_with_single)
     compare_distribution_before_after_fill(panel, filled)
+    save_source_coverage_report(filled)
     return filled
 
 

@@ -37,10 +37,9 @@ warnings.filterwarnings("ignore")
 # CONFIGURATION
 # ============================================================================
 
-# Nếu file này nằm ở thư mục gốc project, output sẽ là ./data/raw/
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-RAW_DIR = BASE_DIR / "data" / "raw"
+RAW_DIR = BASE_DIR / "data" / "raw" / "gsod"
 OUTPUT_FILE = "bronze_data.csv"
 METADATA_FILE = "bronze_metadata.json"
 STATION_SUMMARY_FILE = "bronze_station_summary.csv"
