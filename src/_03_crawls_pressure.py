@@ -1,10 +1,10 @@
+"""Step 3: Download ERA5 pressure-level GRIB files by year."""
+
 import cdsapi
 from pathlib import Path
 import time
 
-# ============================================================================
 # CONFIGURATION
-# ============================================================================
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -41,15 +41,9 @@ VARIABLES = [
     "vertical_velocity",
 ]
 
-
-# ============================================================================
 # ERA5 PRESSURE-LEVEL CRAWLER
-# ============================================================================
 
 def build_request(year: int) -> dict:
-    """
-    Tạo request tải ERA5 pressure-level cho một năm.
-    """
     return {
         "product_type": ["reanalysis"],
         "variable": VARIABLES,
@@ -63,12 +57,7 @@ def build_request(year: int) -> dict:
         "area": AREA,
     }
 
-
 def download_pressure_year(client: cdsapi.Client, year: int) -> None:
-    """
-    Tải dữ liệu ERA5 pressure-level cho một năm và lưu vào:
-    data/raw/pressure/<year>/data.grib
-    """
     output_dir = OUTPUT_BASE_DIR / str(year)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -94,11 +83,7 @@ def download_pressure_year(client: cdsapi.Client, year: int) -> None:
     except Exception as e:
         print(f"❌ {year}: Lỗi khi tải ERA5 pressure-level: {e}")
 
-
 def crawl_pressure() -> None:
-    """
-    Main pipeline tải ERA5 pressure-level data cho giai đoạn 2015–2024.
-    """
     print("=== START ERA5 PRESSURE-LEVEL CRAWLING ===")
     print(f"Output base directory: {OUTPUT_BASE_DIR}")
     print(f"Years: {YEARS.start}–{YEARS.stop - 1}")
@@ -113,7 +98,6 @@ def crawl_pressure() -> None:
         time.sleep(1)
 
     print("\n✅ ERA5 pressure-level crawling completed.")
-
 
 if __name__ == "__main__":
     crawl_pressure()

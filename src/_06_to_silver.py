@@ -1,21 +1,4 @@
-"""
-Silver layer data integration and cleaning module.
-
-This module merges and integrates data from multiple sources:
-- Loads GSOD weather station observations
-- Loads ERA5 pressure-level data
-- Loads ERA5 single-level data
-- Identifies and fills missing date-location combinations using ERA5
-- Merges all data sources on common date-location keys
-- Performs final quality checks and formatting
-- Outputs integrated silver layer dataset ready for feature engineering
-
-Note:
-- ENSO has been removed from this pipeline.
-- Silver dataset does not create target.
-- Silver dataset does not perform feature engineering.
-- PRCP is kept as rainfall amount in mm for Step 6.
-"""
+"""Step 6: Build Silver station-day dataset from GSOD and ERA5."""
 
 import pandas as pd
 import numpy as np
@@ -24,9 +7,7 @@ import warnings
 
 warnings.filterwarnings("ignore")
 
-# ============================================================================
 # CONFIGURATION
-# ============================================================================
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -84,13 +65,9 @@ STATIONARY_FILL_COLS = ["STATION", "LATITUDE", "LONGITUDE", "ELEVATION"]
 # Keep u10, v10, z, lsm because they are useful features later.
 FINAL_DROPS = ["t2m", "d2m", "tp", "msl", "sp", "sst"]
 
-
-# ============================================================================
 # 1. GSOD CLEANING
-# ============================================================================
 
 def _resolve_path(primary_path: Path, fallback_path: Path | None = None) -> Path:
-    """Resolve input file path with optional fallback."""
     if primary_path.exists():
         return primary_path
 
@@ -100,53 +77,39 @@ def _resolve_path(primary_path: Path, fallback_path: Path | None = None) -> Path
 
     raise FileNotFoundError(f"Không tìm thấy file: {primary_path}")
 
-
 def _ensure_required_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Ensure all required columns exist in the dataframe."""
     for col in ALL_COLS:
         if col not in df.columns:
             df[col] = np.nan
     return df[ALL_COLS]
 
-
 def _remove_duplicates(df: pd.DataFrame) -> pd.DataFrame:
-    """Remove duplicate records per station and date."""
     df["DATE"] = pd.to_datetime(df["DATE"], errors="coerce")
     df["STATION"] = df["STATION"].astype(str)
     df = df.dropna(subset=["STATION", "DATE"])
     return df.drop_duplicates(subset=["STATION", "DATE"]).reset_index(drop=True)
 
-
 def _remove_rogue_values(df: pd.DataFrame) -> pd.DataFrame:
-    """Replace GSOD error codes with NaN."""
     for col, error_val in ROGUE_MAPPING.items():
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
             df.loc[np.isclose(df[col], error_val, atol=0.001), col] = np.nan
     return df
 
-
 def _validate_pressure(df: pd.DataFrame) -> pd.DataFrame:
-    """Replace physically invalid pressure readings with NaN."""
     for col in ["STP", "SLP"]:
         if col in df.columns:
             df.loc[~df[col].between(PRESSURE_MIN, PRESSURE_MAX), col] = np.nan
     return df
 
-
 def _convert_to_metric(df: pd.DataFrame) -> pd.DataFrame:
-    """Convert all measurements from GSOD units to Metric system."""
     for col, conversion in UNIT_CONVERSIONS.items():
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
             df[col] = (df[col] + conversion["offset"]) * conversion["factor"]
     return df
 
-
 def gsod(path: str | Path | None = None) -> pd.DataFrame:
-    """
-    Load and clean GSOD weather station data.
-    """
     if path is None:
         path = _resolve_path(GSOD_RAW_PATH, GSOD_RAW_FALLBACK_PATH)
     else:
@@ -166,13 +129,9 @@ def gsod(path: str | Path | None = None) -> pd.DataFrame:
 
     return df
 
-
-# ============================================================================
 # 2. FILL MISSING USING ERA5 SINGLE-LEVEL
-# ============================================================================
 
 def _load_era5_single_level() -> pd.DataFrame:
-    """Load ERA5 single-level data."""
     if not ERA5_SINGLE_PATH.exists():
         raise FileNotFoundError(f"Không tìm thấy ERA5 single-level file: {ERA5_SINGLE_PATH}")
 
@@ -190,16 +149,12 @@ def _load_era5_single_level() -> pd.DataFrame:
 
     return df_era5
 
-
 def _quantize_coordinates(df: pd.DataFrame, resolution: float = GRID_RESOLUTION) -> pd.DataFrame:
-    """Quantize latitude and longitude to grid resolution."""
     df["latitude"] = ((pd.to_numeric(df["LATITUDE"], errors="coerce") / resolution).round() * resolution).round(2)
     df["longitude"] = ((pd.to_numeric(df["LONGITUDE"], errors="coerce") / resolution).round() * resolution).round(2)
     return df
 
-
 def _find_missing_dates(df: pd.DataFrame, start_date: str, end_date: str) -> pd.DataFrame:
-    """Find missing date records for each latitude-longitude grid cell."""
     full_dates = pd.date_range(start=start_date, end=end_date, freq="D")
     missing_records = []
 
@@ -225,9 +180,7 @@ def _find_missing_dates(df: pd.DataFrame, start_date: str, end_date: str) -> pd.
 
     return pd.DataFrame(columns=df_era5.columns)
 
-
 def _prepare_era5_data(df_era5: pd.DataFrame) -> pd.DataFrame:
-    """Rename ERA5 columns to match GSOD naming and remove unnecessary columns."""
     if df_era5.empty:
         return df_era5
 
@@ -235,9 +188,7 @@ def _prepare_era5_data(df_era5: pd.DataFrame) -> pd.DataFrame:
     df_era5 = df_era5.drop(columns=ERA5_COLS_TO_DROP, errors="ignore")
     return df_era5
 
-
 def _forward_fill_stationary(df: pd.DataFrame, cols=None) -> pd.DataFrame:
-    """Forward fill and backward fill stationary properties by location."""
     if cols is None:
         cols = STATIONARY_FILL_COLS
 
@@ -248,9 +199,7 @@ def _forward_fill_stationary(df: pd.DataFrame, cols=None) -> pd.DataFrame:
             )
     return df
 
-
 def _interpolate_missing_values(df: pd.DataFrame) -> pd.DataFrame:
-    """Fill remaining missing values from ERA5 and interpolate visibility by location."""
     if "tp" in df.columns and "PRCP" in df.columns:
         df["PRCP"] = df["PRCP"].fillna(df["tp"])
 
@@ -271,13 +220,15 @@ def _interpolate_missing_values(df: pd.DataFrame) -> pd.DataFrame:
             lambda x: x.interpolate(method="linear", limit_direction="both")
         )
 
+    if {"WDSP", "u10", "v10"}.issubset(df.columns):
+        u10 = pd.to_numeric(df["u10"], errors="coerce")
+        v10 = pd.to_numeric(df["v10"], errors="coerce")
+        era5_wind_speed = np.sqrt(u10 ** 2 + v10 ** 2)
+        df["WDSP"] = pd.to_numeric(df["WDSP"], errors="coerce").fillna(era5_wind_speed)
+
     return df
 
-
 def fill_missing(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Fill missing daily records using ERA5 reanalysis data.
-    """
     print("--- 📥 BƯỚC 3: Tìm dữ liệu bị thiếu và điền từ ERA5 ---")
 
     df = df.rename(columns={"DATE": "time"})
@@ -316,13 +267,9 @@ def fill_missing(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
-
-# ============================================================================
 # 3. MERGE PRESSURE DATA
-# ============================================================================
 
 def _merge_pressure_data(df: pd.DataFrame) -> pd.DataFrame:
-    """Merge ERA5 pressure level data."""
     if not ERA5_PRESSURE_PATH.exists():
         raise FileNotFoundError(f"Không tìm thấy ERA5 pressure-level file: {ERA5_PRESSURE_PATH}")
 
@@ -343,11 +290,7 @@ def _merge_pressure_data(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
-
 def merge_file(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Merge auxiliary pressure-level data.
-    """
     print("--- 📥 BƯỚC 5: Gộp dữ liệu Áp suất ERA5 ---")
 
     df = _merge_pressure_data(df)
@@ -366,10 +309,7 @@ def merge_file(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
-
-# ============================================================================
 # 4. FINAL PIPELINE
-# ============================================================================
 
 def silver_data_pipeline() -> None:
     df = gsod()
@@ -384,7 +324,6 @@ def silver_data_pipeline() -> None:
 
     if {"STATION", "time"}.issubset(df.columns):
         print(f"Duplicate STATION-time: {df.duplicated(subset=['STATION', 'time']).sum()}")
-
 
 if __name__ == "__main__":
     silver_data_pipeline()

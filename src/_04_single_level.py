@@ -1,13 +1,4 @@
-"""
-ERA5 single-level data processing module.
-
-This module processes ERA5 single-level weather variables from GRIB format:
-- Loads GRIB files containing surface meteorological variables
-- Filters data to Vietnam geographic region
-- Extracts and converts meteorological units (K→°C, Pa→hPa, etc.)
-- Resamples hourly data to daily frequency with appropriate aggregations
-- Concatenates multiple yearly files into final output
-"""
+"""Step 4: Process ERA5 single-level GRIB files to daily parquet."""
 
 import gc
 import xarray as xr
@@ -15,9 +6,7 @@ import pandas as pd
 from pathlib import Path
 from typing import List
 
-# ============================================================================
 # CONFIGURATION
-# ============================================================================
 
 VIETNAM_LAT_SLICE = (24, 8)          # (North, South)
 VIETNAM_LON_SLICE = (102, 110)       # (West, East)
@@ -53,33 +42,23 @@ RESAMPLE_AGG_COLS = {
     "lsm": "first",
 }
 
-
-# ============================================================================
 # 1. PROCESSING SINGLE LEVEL GRIB FILE
-# ============================================================================
 
 def _ensure_directories() -> None:
-    """Create required output directories."""
     BASE_SINGLE_CLEAN.mkdir(parents=True, exist_ok=True)
     OUTPUT_SINGLE_FINAL.parent.mkdir(parents=True, exist_ok=True)
 
-
 def _drop_identifier_columns(df: pd.DataFrame, cols: List[str] = None) -> pd.DataFrame:
-    """Remove GRIB identifier columns that are not needed for analysis."""
     if cols is None:
         cols = COLS_TO_DROP
     return df.drop(columns=cols, errors="ignore")
 
-
 def _downsample_to_float32(df: pd.DataFrame) -> pd.DataFrame:
-    """Downcast float64 columns to float32 to save memory."""
     floats = df.select_dtypes(include=["float64"]).columns
     df[floats] = df[floats].astype("float32")
     return df
 
-
 def _convert_temperature_kelvin_to_celsius(df: pd.DataFrame, cols: List[str] = None) -> pd.DataFrame:
-    """Convert temperature columns from Kelvin to Celsius."""
     if cols is None:
         cols = TEMP_COLS_K_TO_C
 
@@ -89,9 +68,7 @@ def _convert_temperature_kelvin_to_celsius(df: pd.DataFrame, cols: List[str] = N
 
     return df
 
-
 def _convert_pressure_pa_to_hpa(df: pd.DataFrame, cols: List[str] = None) -> pd.DataFrame:
-    """Convert pressure columns from Pa to hPa."""
     if cols is None:
         cols = PRESSURE_COLS_PA_TO_HPA
 
@@ -101,28 +78,17 @@ def _convert_pressure_pa_to_hpa(df: pd.DataFrame, cols: List[str] = None) -> pd.
 
     return df
 
-
 def _convert_geopotential_to_meters(df: pd.DataFrame) -> pd.DataFrame:
-    """Convert geopotential from m²/s² to geopotential height in meters."""
     if "z" in df.columns:
         df["z"] = df["z"] / GRAVITY
     return df
 
-
 def _convert_precipitation_m_to_mm(df: pd.DataFrame) -> pd.DataFrame:
-    """Convert precipitation from meters to millimeters."""
     if "tp" in df.columns:
         df["tp"] = df["tp"] * 1000
     return df
 
-
 def _extract_total_precipitation(path: str | Path) -> pd.DataFrame:
-    """
-    Extract total precipitation from GRIB file separately.
-
-    ERA5 total precipitation often has valid_time/step metadata, so it is
-    handled separately and aggregated to daily total precipitation.
-    """
     path = Path(path)
 
     ds = xr.open_dataset(
@@ -175,16 +141,7 @@ def _extract_total_precipitation(path: str | Path) -> pd.DataFrame:
 
     return tp_daily
 
-
 def process_single_level(year: str) -> pd.DataFrame:
-    """
-    Process single level GRIB file:
-    1. Load non-precipitation instant variables.
-    2. Extract total precipitation separately.
-    3. Convert units.
-    4. Resample to daily frequency.
-    5. Merge daily base variables with daily precipitation.
-    """
     _ensure_directories()
 
     year = str(year)
@@ -270,20 +227,9 @@ def process_single_level(year: str) -> pd.DataFrame:
 
     return df_daily
 
-
-# ============================================================================
 # MAIN PIPELINE
-# ============================================================================
 
 def process_single_levels() -> None:
-    """
-    Main pipeline for processing ERA5 single-level data.
-
-    Steps:
-    1. Process each year from 2015 to 2024 separately.
-    2. Save each as intermediate parquet file.
-    3. Concatenate all years into final output.
-    """
     _ensure_directories()
 
     print("\n=== BẮT ĐẦU XỬ LÝ SINGLE LEVEL ===")
@@ -309,7 +255,6 @@ def process_single_levels() -> None:
 
     del df
     gc.collect()
-
 
 if __name__ == "__main__":
     process_single_levels()

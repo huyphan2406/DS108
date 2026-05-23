@@ -1,26 +1,11 @@
-"""
-Feature engineering module for rainfall prediction.
-
-This module creates advanced meteorological features from Silver weather data:
-- Temporal features: cyclical day/month encoding for seasonal patterns
-- Thermodynamic features: moist convection, lapse rate, dew point depression
-- Wind/dynamic features: wind shear magnitude, ageostrophic signal
-- Geometric features: atmospheric layer thickness, elevation relationships
-- Flux features: moisture transport
-- Temporal dynamics: lagged features and rolling statistics
-- Targets for two-stage rainfall modeling:
-  Stage 1: PRCP_label = rain/no-rain classification target
-  Stage 2: PRCP = rainfall amount in mm for regression target
-"""
+"""Step 7: Create meteorological features and two-stage rainfall targets."""
 
 import numpy as np
 import pandas as pd
 from pathlib import Path
 from typing import List
 
-# ============================================================================
 # CONFIGURATION
-# ============================================================================
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -57,16 +42,9 @@ DYNAMIC_FEATURES = [
 
 GROUPBY_COLS = ["STATION"]
 
-
-# ============================================================================
 # UTILITY FUNCTIONS
-# ============================================================================
 
 def _get_groupby_cols(df: pd.DataFrame) -> List[str]:
-    """
-    Use STATION for temporal features if available.
-    Fallback to LATITUDE/LONGITUDE if STATION does not exist.
-    """
     if "STATION" in df.columns:
         return ["STATION"]
 
@@ -75,20 +53,13 @@ def _get_groupby_cols(df: pd.DataFrame) -> List[str]:
 
     raise KeyError("Không tìm thấy STATION hoặc LATITUDE/LONGITUDE để tạo lag/rolling features.")
 
-
 def _safe_numeric(df: pd.DataFrame, cols: List[str]) -> pd.DataFrame:
-    """Convert selected columns to numeric if they exist."""
     for col in cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
     return df
 
-
 def _drop_temporal_nans(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Drop rows with NaN created by lag/diff features.
-    These NaNs usually occur at the first few days of each station.
-    """
     temporal_cols = [
         col for col in df.columns
         if "_lag_" in col
@@ -106,16 +77,9 @@ def _drop_temporal_nans(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
-
-# ============================================================================
 # 1. TEMPORAL FEATURES
-# ============================================================================
 
 def create_temporal_features(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Create cyclical time-based features to capture seasonal patterns.
-    Uses sine/cosine encoding for day-of-year and month.
-    """
     df["time"] = pd.to_datetime(df["time"], errors="coerce")
     df = df.dropna(subset=["time"]).reset_index(drop=True)
 
@@ -130,16 +94,9 @@ def create_temporal_features(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
-
-# ============================================================================
 # 2. THERMODYNAMIC FEATURES
-# ============================================================================
 
 def create_thermodynamic_features(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Create features representing atmospheric thermodynamic properties and processes.
-    Includes moist convection, lapse rate, and moisture-temperature relationship.
-    """
     group_cols = _get_groupby_cols(df)
     df = df.sort_values(group_cols + ["time"]).reset_index(drop=True)
 
@@ -167,16 +124,9 @@ def create_thermodynamic_features(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
-
-# ============================================================================
 # 3. WIND & DYNAMIC FEATURES
-# ============================================================================
 
 def create_wind_features(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Create features representing atmospheric wind shear and ageostrophic motion.
-    These indicate atmospheric instability and imbalance.
-    """
     group_cols = _get_groupby_cols(df)
     df = df.sort_values(group_cols + ["time"]).reset_index(drop=True)
 
@@ -202,16 +152,9 @@ def create_wind_features(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
-
-# ============================================================================
 # 4. GEOMETRIC FEATURES
-# ============================================================================
 
 def create_geometric_features(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Create features representing vertical atmospheric structure and elevation.
-    Includes geopotential thickness and surface-upper level relationships.
-    """
     if {"z_500", "z_850"}.issubset(df.columns):
         df["thickness_500_850"] = df["z_500"] - df["z_850"]
 
@@ -220,38 +163,21 @@ def create_geometric_features(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
-
-# ============================================================================
 # 5. FLUX FEATURES
-# ============================================================================
 
 def create_flux_features(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Create features representing atmospheric moisture transport.
-    Moisture flux indicates water vapor movement potential.
-    """
     if {"q_850", "u_850", "v_850"}.issubset(df.columns):
         df["moisture_flux_850"] = df["q_850"] * np.sqrt(df["u_850"] ** 2 + df["v_850"] ** 2)
 
     return df
 
-
-# ============================================================================
 # 6. TEMPORAL DYNAMICS FEATURES (Lag & Rolling Statistics)
-# ============================================================================
 
 def create_lag_features(
     df: pd.DataFrame,
     features: List[str] = None,
     lags: List[int] = None,
 ) -> pd.DataFrame:
-    """
-    Create lagged features to capture temporal dependencies.
-
-    Important:
-    - PRCP_lag_1 / PRCP_lag_2 are allowed because they use past rainfall.
-    - Current-day PRCP is kept only as target, not as model input.
-    """
     if features is None:
         features = LAG_FEATURES
     if lags is None:
@@ -269,19 +195,11 @@ def create_lag_features(
 
     return df
 
-
 def create_rolling_statistics(
     df: pd.DataFrame,
     features: List[str] = None,
     window: int = None,
 ) -> pd.DataFrame:
-    """
-    Create rolling window statistics to capture multi-day patterns.
-
-    Important:
-    - Rolling statistics for PRCP use past-only values via shift(1),
-      so they do not leak current-day rainfall target.
-    """
     if features is None:
         features = DYNAMIC_FEATURES
     if window is None:
@@ -315,27 +233,9 @@ def create_rolling_statistics(
 
     return df
 
-
-# ============================================================================
 # 7. TARGET ENCODING
-# ============================================================================
 
 def prepare_target(df: pd.DataFrame, threshold: float = None) -> pd.DataFrame:
-    """
-    Prepare targets for two-stage rainfall modeling.
-
-    Stage 1:
-    - PRCP_label: binary rain/no-rain target.
-      PRCP_label = 1 if PRCP > threshold, otherwise 0.
-
-    Stage 2:
-    - PRCP: rainfall amount in mm, used as regression target.
-    - PRCP_log1p: log1p(PRCP), optional regression target for skewed rainfall.
-
-    Notes:
-    - PRCP is kept in the final file because it is the regression target.
-    - During model training, PRCP / PRCP_label / PRCP_log1p must be dropped from X.
-    """
     if threshold is None:
         threshold = PRECIPITATION_THRESHOLD
 
@@ -350,29 +250,12 @@ def prepare_target(df: pd.DataFrame, threshold: float = None) -> pd.DataFrame:
 
     return df
 
-
-# ============================================================================
 # MAIN PIPELINE
-# ============================================================================
 
 def feature_engineering(
     input_path: str | Path = None,
     output_path: str | Path = None,
 ) -> None:
-    """
-    Main feature engineering pipeline.
-
-    Steps:
-    1. Load Silver data
-    2. Create temporal features
-    3. Create thermodynamic features
-    4. Create wind/dynamic features
-    5. Create geometric features
-    6. Create flux features
-    7. Create lagged and rolling features
-    8. Prepare two-stage targets
-    9. Save engineered dataset
-    """
     if input_path is None:
         input_path = INPUT_PATH
 
@@ -440,7 +323,6 @@ def feature_engineering(
 
     print(f"✨ Feature engineering complete! Shape: {df.shape}")
     print("Targets created: PRCP, PRCP_label, PRCP_log1p")
-
 
 if __name__ == "__main__":
     feature_engineering()
