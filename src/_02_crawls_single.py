@@ -1,10 +1,10 @@
+"""Step 2: Download ERA5 single-level GRIB files by year."""
+
 import cdsapi
 from pathlib import Path
 import time
 
-# ============================================================================
 # CONFIGURATION
-# ============================================================================
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -43,15 +43,9 @@ VARIABLES = [
     "land_sea_mask",
 ]
 
-
-# ============================================================================
 # ERA5 SINGLE-LEVEL CRAWLER
-# ============================================================================
 
 def build_request(year: int) -> dict:
-    """
-    Tạo request tải ERA5 single-level cho một năm.
-    """
     return {
         "product_type": ["reanalysis"],
         "year": [str(year)],
@@ -64,12 +58,7 @@ def build_request(year: int) -> dict:
         "area": AREA,
     }
 
-
 def download_single_level_year(client: cdsapi.Client, year: int) -> None:
-    """
-    Tải dữ liệu ERA5 single-level cho một năm và lưu vào:
-    data/raw/single/<year>/data.grib
-    """
     output_dir = OUTPUT_BASE_DIR / str(year)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -95,11 +84,7 @@ def download_single_level_year(client: cdsapi.Client, year: int) -> None:
     except Exception as e:
         print(f"❌ {year}: Lỗi khi tải ERA5 single-level: {e}")
 
-
 def crawl_single_level() -> None:
-    """
-    Main pipeline tải ERA5 single-level data cho giai đoạn 2015–2024.
-    """
     print("=== START ERA5 SINGLE-LEVEL CRAWLING ===")
     print(f"Output base directory: {OUTPUT_BASE_DIR}")
     print(f"Years: {YEARS.start}–{YEARS.stop - 1}")
@@ -113,7 +98,6 @@ def crawl_single_level() -> None:
         time.sleep(1)
 
     print("\n✅ ERA5 single-level crawling completed.")
-
 
 if __name__ == "__main__":
     crawl_single_level()

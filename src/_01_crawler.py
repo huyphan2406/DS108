@@ -1,3 +1,5 @@
+"""Step 1: Crawl NOAA GSOD raw station data and save Bronze artifacts."""
+
 import pandas as pd
 import requests
 import io
@@ -9,9 +11,7 @@ from datetime import datetime, timezone
 
 warnings.filterwarnings("ignore")
 
-# ============================================================================
 # CONFIGURATION
-# ============================================================================
 
 # NOAA NCEI station structure: USAF (6 digits) + WBAN (5 digits)
 TARGET_STATIONS = {
@@ -35,27 +35,13 @@ OUTPUT_FILE = OUTPUT_DIR / "bronze_data.csv"
 OUTPUT_METADATA_FILE = OUTPUT_DIR / "bronze_metadata.json"
 OUTPUT_STATION_SUMMARY_FILE = OUTPUT_DIR / "bronze_station_summary.csv"
 
-
-# ============================================================================
 # 1. DATA CRAWLING
-# ============================================================================
 
 def _fetch_station_data(
     stn_id: str,
     stn_name: str,
     session: requests.Session
 ) -> tuple[list[pd.DataFrame], int]:
-    """
-    Fetch weather data for a specific station across multiple years.
-
-    Args:
-        stn_id: Station ID code, USAF + WBAN.
-        stn_name: Human-readable station name.
-        session: Requests session object for connection pooling.
-
-    Returns:
-        Tuple of list of yearly dataframes and count of successful years.
-    """
     print(f"📍 Đang xử lý trạm: {stn_name} (Mã: {stn_id})")
 
     station_data = []
@@ -93,11 +79,7 @@ def _fetch_station_data(
 
     return station_data, success_years
 
-
 def _build_station_summary(final_df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Build station-level summary for Bronze data.
-    """
     if "DATE" in final_df.columns:
         date_col = "DATE"
     else:
@@ -122,16 +104,12 @@ def _build_station_summary(final_df: pd.DataFrame) -> pd.DataFrame:
 
     return pd.DataFrame(summary_rows)
 
-
 def _save_metadata(
     output_path: Path,
     station_summary: pd.DataFrame,
     total_rows: int,
     total_columns: int
 ) -> None:
-    """
-    Save Bronze metadata for reproducibility.
-    """
     metadata = {
         "dataset_layer": "bronze/raw",
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -152,15 +130,7 @@ def _save_metadata(
     with open(OUTPUT_METADATA_FILE, "w", encoding="utf-8") as f:
         json.dump(metadata, f, ensure_ascii=False, indent=2)
 
-
 def _merge_and_save_data(all_data: list[pd.DataFrame], output_path: Path) -> None:
-    """
-    Merge all station data and save to CSV.
-
-    Args:
-        all_data: List of dataframes from all stations.
-        output_path: Path to save the merged CSV file.
-    """
     print("--- 🛠️ ĐANG GỘP DỮ LIỆU (RAW DATA) ---")
 
     final_df = pd.concat(all_data, ignore_index=True)
@@ -191,25 +161,9 @@ def _merge_and_save_data(all_data: list[pd.DataFrame], output_path: Path) -> Non
     print(f"- Tổng số dòng (records): {len(final_df):,}")
     print(f"- Tổng số cột (features): {len(final_df.columns)}")
 
-
-# ============================================================================
 # MAIN PIPELINE
-# ============================================================================
 
 def crawl_weather_data(output_path: str | Path = None) -> None:
-    """
-    Main crawling pipeline for NOAA GSOD weather data.
-
-    Steps:
-    1. Initialize session and print configuration.
-    2. Fetch data for each target station across all years.
-    3. Merge all data and save to Bronze CSV.
-    4. Save station summary and metadata.
-
-    Args:
-        output_path: Path to save output CSV.
-                     Defaults to data/raw/gsod/bronze_data.csv.
-    """
     if output_path is None:
         output_path = OUTPUT_FILE
 
@@ -241,7 +195,6 @@ def crawl_weather_data(output_path: str | Path = None) -> None:
         _merge_and_save_data(all_data, output_path)
     else:
         print("\n❌ LỖI: Không có dữ liệu nào được tải về. Hãy kiểm tra lại kết nối mạng!")
-
 
 if __name__ == "__main__":
     crawl_weather_data()

@@ -1,3 +1,5 @@
+"""Step 5: Process ERA5 pressure-level GRIB files to daily parquet."""
+
 import xarray as xr
 import pandas as pd
 import gc
@@ -5,9 +7,7 @@ from tqdm.auto import tqdm
 from typing import List
 from pathlib import Path
 
-# ============================================================================
 # CONFIGURATION
-# ============================================================================
 PRESSURE_LEVELS = [500, 850]
 VIETNAM_LAT_SLICE = (24, 8)       # (North, South)
 VIETNAM_LON_SLICE = (102, 110)    # (West, East)
@@ -37,21 +37,13 @@ RESAMPLE_AGG_COLS = {
     "w_850": "mean",
 }
 
-
-# ============================================================================
 # 1. PROCESSING SINGLE GRIB FILE
-# ============================================================================
 
 def _ensure_directories() -> None:
-    """Create required output directories."""
     BASE_PRESSURE_CLEAN.mkdir(parents=True, exist_ok=True)
     OUTPUT_PRESSURE_FINAL.parent.mkdir(parents=True, exist_ok=True)
 
-
 def _extract_pressure_levels(ds: xr.Dataset, level: int) -> xr.Dataset:
-    """
-    Extract a specific pressure level from dataset and rename variables.
-    """
     ds_level = ds.sel({LEVEL_NAME: level})
 
     if LEVEL_NAME in ds_level.coords or LEVEL_NAME in ds_level.dims:
@@ -60,45 +52,28 @@ def _extract_pressure_levels(ds: xr.Dataset, level: int) -> xr.Dataset:
     ds_level = ds_level.rename({v: f"{v}_{level}" for v in ds_level.data_vars})
     return ds_level
 
-
 def _convert_temperature_kelvin_to_celsius(df: pd.DataFrame, temp_cols: List[str]) -> pd.DataFrame:
-    """Convert temperature columns from Kelvin to Celsius."""
     for col in temp_cols:
         if col in df.columns:
             df[col] = df[col] - 273.15
     return df
 
-
 def _convert_geopotential_to_meters(df: pd.DataFrame, z_cols: List[str]) -> pd.DataFrame:
-    """Convert geopotential from m²/s² to geopotential height in meters."""
     for col in z_cols:
         if col in df.columns:
             df[col] = df[col] / GRAVITY
     return df
 
-
 def _downsample_to_float32(df: pd.DataFrame) -> pd.DataFrame:
-    """Downcast float64 columns to float32 to save memory."""
     float_cols = df.select_dtypes(include=["float64"]).columns
     df[float_cols] = df[float_cols].astype("float32")
     return df
 
-
 def _get_common_merge_keys(df_left: pd.DataFrame, df_right: pd.DataFrame) -> List[str]:
-    """Find common coordinate columns for merging pressure levels."""
     preferred_keys = ["time", "latitude", "longitude", "number", "step", "valid_time"]
     return [key for key in preferred_keys if key in df_left.columns and key in df_right.columns]
 
-
 def merge_pressure_levels(grib_path: str | Path) -> pd.DataFrame:
-    """
-    Process pressure level GRIB file:
-    1. Load GRIB file and filter Vietnam region.
-    2. Extract 500 hPa and 850 hPa levels.
-    3. Merge pressure levels horizontally.
-    4. Convert units.
-    5. Resample to daily frequency.
-    """
     grib_path = Path(grib_path)
 
     if not grib_path.exists():
@@ -198,15 +173,9 @@ def merge_pressure_levels(grib_path: str | Path) -> pd.DataFrame:
 
     return df_final
 
-
-# ============================================================================
 # 2. CONCATENATING MULTIPLE FILES
-# ============================================================================
 
 def concatenate_pressure_files(base_path: str | Path, folders: List[int]) -> pd.DataFrame:
-    """
-    Concatenate pressure level parquet files from multiple years.
-    """
     print("\n--- Bắt đầu gộp các file Parquet tổng hợp...")
 
     base_path = Path(base_path)
@@ -249,20 +218,9 @@ def concatenate_pressure_files(base_path: str | Path, folders: List[int]) -> pd.
 
     return df_final
 
-
-# ============================================================================
 # MAIN PIPELINE
-# ============================================================================
 
 def process_pressure_levels() -> None:
-    """
-    Main pipeline for processing ERA5 pressure level data.
-
-    Steps:
-    1. Process individual yearly GRIB files from 2015 to 2024.
-    2. Save each as intermediate parquet file.
-    3. Concatenate all yearly files into final output.
-    """
     _ensure_directories()
 
     print("\n=== BẮT ĐẦU XỬ LÝ PRESSURE LEVELS ===")
@@ -285,7 +243,6 @@ def process_pressure_levels() -> None:
     folders = list(range(2016, 2025))
 
     concatenate_pressure_files(base_path, folders)
-
 
 if __name__ == "__main__":
     process_pressure_levels()

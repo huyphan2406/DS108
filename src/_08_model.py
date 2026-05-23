@@ -1,22 +1,4 @@
-"""
-Two-stage rainfall model training and evaluation module.
-
-Stage 1:
-- Classification model predicts rainfall occurrence:
-  P(PRCP_label = 1)
-
-Stage 2:
-- Regression model predicts rainfall amount on rainy days:
-  E(PRCP | PRCP_label = 1)
-
-Final rainfall prediction:
-- Hard decision:
-  if predicted rain -> predicted amount
-  else -> 0 mm
-
-- Expected rainfall:
-  P(rain) * predicted amount if rain
-"""
+"""Step 8: Train and evaluate two-stage rainfall model."""
 
 import pandas as pd
 import numpy as np
@@ -41,9 +23,7 @@ from sklearn.metrics import (
     r2_score,
 )
 
-# ============================================================================
 # CONFIGURATION
-# ============================================================================
 
 RANDOM_SEED = 108
 
@@ -97,20 +77,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 INPUT_CSV = BASE_DIR / "data" / "feature_engineering" / "feature_engineered_data.csv"
 OUTPUT_DIR = BASE_DIR / "models" / "rainfall_validation"
 
-
-# ============================================================================
 # 1. DATA LOADING & PREPROCESSING
-# ============================================================================
 
 def _load_and_prepare_data(csv_path: str | Path) -> pd.DataFrame:
-    """
-    Load feature-engineered data.
-
-    Expected targets:
-    - PRCP_label: classification target
-    - PRCP: rainfall amount in mm
-    - PRCP_log1p: log1p(PRCP), regression target
-    """
     df = pd.read_csv(csv_path)
     df["time"] = pd.to_datetime(df["time"], errors="coerce")
     df = df.dropna(subset=["time"]).reset_index(drop=True)
@@ -132,18 +101,14 @@ def _load_and_prepare_data(csv_path: str | Path) -> pd.DataFrame:
 
     return df
 
-
 def _split_train_valid_test(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Split data into train, validation, and test sets by time."""
     train_df = df[df["time"] < TRAIN_END].copy()
     valid_df = df[(df["time"] >= VALID_START) & (df["time"] < VALID_END)].copy()
     test_df = df[df["time"] >= TEST_START].copy()
 
     return train_df, valid_df, test_df
 
-
 def _get_feature_columns(df: pd.DataFrame) -> list[str]:
-    """Return numeric feature columns after dropping target and metadata."""
     drop_cols = [col for col in COLS_TO_DROP if col in df.columns]
 
     X = df.drop(columns=drop_cols, errors="ignore")
@@ -151,20 +116,14 @@ def _get_feature_columns(df: pd.DataFrame) -> list[str]:
 
     return X.columns.tolist()
 
-
 def _prepare_xy(df: pd.DataFrame, feature_cols: list[str], target_col: str):
-    """Prepare X and y."""
     X = df[feature_cols].copy()
     y = df[target_col].copy()
     return X, y
 
-
-# ============================================================================
 # 2. STAGE 1 - CLASSIFICATION
-# ============================================================================
 
 def train_classifier(train_df: pd.DataFrame, valid_df: pd.DataFrame, feature_cols: list[str]) -> lgb.Booster:
-    """Train Stage 1 LightGBM binary classifier."""
     print("\n=== STAGE 1: TRAIN RAIN / NO-RAIN CLASSIFIER ===")
 
     X_train, y_train = _prepare_xy(train_df, feature_cols, TARGET_CLS)
@@ -188,9 +147,7 @@ def train_classifier(train_df: pd.DataFrame, valid_df: pd.DataFrame, feature_col
     print(f"✅ Stage 1 complete. Best iteration: {model.best_iteration}")
     return model
 
-
 def find_best_threshold(y_true: pd.Series, y_prob: np.ndarray) -> tuple[float, pd.DataFrame]:
-    """Choose best threshold on validation set using F1 score."""
     rows = []
 
     for threshold in np.arange(0.05, 0.951, 0.005):
@@ -209,9 +166,7 @@ def find_best_threshold(y_true: pd.Series, y_prob: np.ndarray) -> tuple[float, p
 
     return float(best_row["threshold"]), threshold_df
 
-
 def evaluate_classifier(y_true: pd.Series, y_prob: np.ndarray, threshold: float) -> dict:
-    """Evaluate Stage 1 classification."""
     y_pred = (y_prob >= threshold).astype(int)
 
     return {
@@ -226,18 +181,9 @@ def evaluate_classifier(y_true: pd.Series, y_prob: np.ndarray, threshold: float)
         "brier_score": brier_score_loss(y_true, y_prob),
     }
 
-
-# ============================================================================
 # 3. STAGE 2 - REGRESSION ON RAINY DAYS
-# ============================================================================
 
 def train_regressor(train_df: pd.DataFrame, valid_df: pd.DataFrame, feature_cols: list[str]) -> lgb.Booster:
-    """
-    Train Stage 2 rainfall amount regressor.
-
-    Training data:
-    - only rainy days in train set where PRCP_label = 1.
-    """
     print("\n=== STAGE 2: TRAIN RAINFALL AMOUNT REGRESSOR ===")
 
     train_rain = train_df[train_df[TARGET_CLS] == 1].copy()
@@ -264,13 +210,11 @@ def train_regressor(train_df: pd.DataFrame, valid_df: pd.DataFrame, feature_cols
     print(f"✅ Stage 2 complete. Best iteration: {model.best_iteration}")
     return model
 
-
 def evaluate_regressor_on_rainy_days(
     model: lgb.Booster,
     df: pd.DataFrame,
     feature_cols: list[str],
 ) -> dict:
-    """Evaluate Stage 2 only on true rainy days."""
     rainy_df = df[df[TARGET_CLS] == 1].copy()
 
     X = rainy_df[feature_cols]
@@ -288,10 +232,7 @@ def evaluate_regressor_on_rainy_days(
         "n_rainy_days": len(rainy_df),
     }
 
-
-# ============================================================================
 # 4. TWO-STAGE EVALUATION
-# ============================================================================
 
 def evaluate_two_stage(
     classifier: lgb.Booster,
@@ -300,13 +241,6 @@ def evaluate_two_stage(
     feature_cols: list[str],
     threshold: float,
 ) -> tuple[dict, pd.DataFrame]:
-    """
-    Evaluate end-to-end two-stage rainfall prediction.
-
-    Final prediction:
-    - hard_pred_mm = regressed amount if classifier predicts rain, else 0
-    - expected_pred_mm = P(rain) * regressed amount
-    """
     X = df[feature_cols]
 
     y_true_cls = df[TARGET_CLS].values
@@ -346,42 +280,21 @@ def evaluate_two_stage(
 
     return metrics, pred_df
 
-
-# ============================================================================
 # 5. VISUALIZATION
-# ============================================================================
 
 def plot_confusion_matrix(y_true, y_pred) -> None:
-    """Plot confusion matrix."""
     ConfusionMatrixDisplay.from_predictions(y_true, y_pred, cmap="Blues")
     plt.title("Confusion Matrix - Stage 1 Rain Classification")
     plt.show()
 
-
 def plot_feature_importance(model: lgb.Booster, max_features: int = 15, title: str = "Feature Importance") -> None:
-    """Plot top feature importances."""
     lgb.plot_importance(model, max_num_features=max_features, importance_type="gain")
     plt.title(title)
     plt.show()
 
-
-# ============================================================================
 # MAIN PIPELINE
-# ============================================================================
 
 def train_rainfall_model(input_csv: str | Path = None) -> dict:
-    """
-    Main two-stage rainfall modeling pipeline.
-
-    Steps:
-    1. Load feature-engineered data
-    2. Split into train/valid/test by time
-    3. Train Stage 1 classifier on all train data
-    4. Select threshold on validation
-    5. Train Stage 2 regressor on rainy train days only
-    6. Evaluate on validation and test
-    7. Save metrics and predictions
-    """
     if input_csv is None:
         input_csv = INPUT_CSV
 
@@ -466,7 +379,6 @@ def train_rainfall_model(input_csv: str | Path = None) -> dict:
     print(f"\n✅ Saved outputs to: {OUTPUT_DIR}")
 
     return test_metrics
-
 
 if __name__ == "__main__":
     train_rainfall_model()
