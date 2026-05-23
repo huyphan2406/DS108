@@ -1,0 +1,22 @@
+{
+  "dataset_layer": "bronze/raw",
+  "created_at_utc": "2026-05-22T15:40:27.420619+00:00",
+  "source": "NOAA NCEI Global Summary of the Day",
+  "base_url": "https://www.ncei.noaa.gov/data/global-summary-of-the-day/access/",
+  "years": [
+    2015,
+    2024
+  ],
+  "target_stations": {
+    "48825099999": "HA DONG (Đại diện Bắc Bộ)",
+    "48845099999": "VINH (Đại diện Bắc Trung Bộ)",
+    "48863099999": "QUANG NGAI (Đại diện miền Trung)",
+    "48877099999": "NHA TRANG (Đại diện Nam Trung Bộ)",
+    "48914099999": "CA MAU (Đại diện Nam Bộ)"
+  },
+  "output_file": "C:\\Users\\Laptop\\PycharmProjects\\DS108\\data\\raw\\gsod\\bronze_data.csv",
+  "n_rows": 18026,
+  "n_columns": 31,
+  "n_stations": 5,
+  "note": "This is raw Bronze data downloaded from NOAA GSOD. No deep cleaning, imputation, unit conversion or feature engineering is performed here."
+}
