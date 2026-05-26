@@ -1,6 +1,0 @@
-.idea/__pycache__/
-*.pyc
-
-# Large local files
-data/clean/ERA5_pressure_final.parquet
-data/clean/ERA5_single_level.parquet

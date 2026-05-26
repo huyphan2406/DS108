@@ -1,0 +1,76 @@
+column,dtype,unit,source_or_derivation,role,description,missing_count,notes
+STATION,string,không,NOAA GSOD,metadata,Mã định danh trạm NOAA cho dòng trạm-ngày,0,Loại khỏi feature model vì là metadata
+time,date,YYYY-MM-DD,Căn chỉnh NOAA GSOD và ERA5,metadata,Ngày lịch của bản ghi trạm-ngày,0,Loại khỏi feature model vì là metadata
+LATITUDE,float64,độ,NOAA GSOD,metadata,Vĩ độ trạm,0,Dùng để mô tả địa lý trạm
+LONGITUDE,float64,độ,NOAA GSOD,metadata,Kinh độ trạm,0,Dùng để mô tả địa lý trạm
+ELEVATION,float64,m,NOAA GSOD,metadata,Độ cao trạm so với mực nước biển trung bình,0,Dùng để mô tả địa hình trạm
+TEMP,float64,degC,NOAA GSOD bù từ ERA5 t2m,feature,Nhiệt độ không khí gần bề mặt theo ngày,0,Giá trị GSOD được đổi từ Fahrenheit
+PRCP,float64,mm,NOAA GSOD bù từ ERA5 tp,target,Lượng mưa hằng ngày,0,Không dùng làm input model
+WDSP,float64,m/s,NOAA GSOD bù từ ERA5 u10/v10 khi có thể,feature,Tốc độ gió trung bình ngày,598,Giá trị thiếu còn lại được impute trong model pipeline
+DEWP,float64,degC,NOAA GSOD bù từ ERA5 d2m,feature,Nhiệt độ điểm sương hằng ngày,0,Giá trị GSOD được đổi từ Fahrenheit
+STP,float64,hPa,NOAA GSOD bù từ ERA5 sp,feature,Áp suất tại trạm theo ngày,0,Được kiểm tra khoảng hợp lý trong silver pipeline
+SLP,float64,hPa,NOAA GSOD bù từ ERA5 msl,feature,Áp suất mực nước biển theo ngày,0,Được kiểm tra khoảng hợp lý trong silver pipeline
+VISIB,float64,km,Nội suy theo trạm từ NOAA GSOD,feature,Tầm nhìn trung bình ngày,0,Nội suy trong cùng nhóm trạm hoặc grid
+u10,float64,m/s,ERA5 single-level,feature,Thành phần gió Đông-Tây ở 10m trung bình ngày,0,Feature tái phân tích lịch sử cùng ngày
+v10,float64,m/s,ERA5 single-level,feature,Thành phần gió Bắc-Nam ở 10m trung bình ngày,0,Feature tái phân tích lịch sử cùng ngày
+z,float64,m,ERA5 single-level,feature,Độ cao địa thế bề mặt sau đổi từ geopotential,0,Dùng cho feature liên quan địa hình
+lsm,float64,fraction,ERA5 single-level,feature,Tỷ lệ land-sea mask của grid,0,Mô tả loại bề mặt grid
+z_500,float64,m,ERA5 pressure-level,feature,Độ cao địa thế tầng 500 hPa,0,Trung bình ngày
+t_500,float64,degC,ERA5 pressure-level,feature,Nhiệt độ không khí tầng 500 hPa,0,Trung bình ngày sau đổi từ Kelvin
+q_500,float64,kg/kg,ERA5 pressure-level,feature,Độ ẩm riêng tầng 500 hPa,0,Trung bình ngày
+u_500,float64,m/s,ERA5 pressure-level,feature,Thành phần gió Đông-Tây tầng 500 hPa,0,Trung bình ngày
+v_500,float64,m/s,ERA5 pressure-level,feature,Thành phần gió Bắc-Nam tầng 500 hPa,0,Trung bình ngày
+w_500,float64,Pa/s,ERA5 pressure-level,feature,Vận tốc thẳng đứng tầng 500 hPa,0,Trung bình ngày
+z_850,float64,m,ERA5 pressure-level,feature,Độ cao địa thế tầng 850 hPa,0,Trung bình ngày
+t_850,float64,degC,ERA5 pressure-level,feature,Nhiệt độ không khí tầng 850 hPa,0,Trung bình ngày sau đổi từ Kelvin
+q_850,float64,kg/kg,ERA5 pressure-level,feature,Độ ẩm riêng tầng 850 hPa,0,Trung bình ngày
+u_850,float64,m/s,ERA5 pressure-level,feature,Thành phần gió Đông-Tây tầng 850 hPa,0,Trung bình ngày
+v_850,float64,m/s,ERA5 pressure-level,feature,Thành phần gió Bắc-Nam tầng 850 hPa,0,Trung bình ngày
+w_850,float64,Pa/s,ERA5 pressure-level,feature,Vận tốc thẳng đứng tầng 850 hPa,0,Trung bình ngày
+day_sin,float64,không,Feature engineering,feature,Mã hóa sin của ngày trong năm,0,Feature thời gian dạng chu kỳ
+day_cos,float64,không,Feature engineering,feature,Mã hóa cos của ngày trong năm,0,Feature thời gian dạng chu kỳ
+month_sin,float64,không,Feature engineering,feature,Mã hóa sin của tháng,0,Feature mùa vụ dạng chu kỳ
+month_cos,float64,không,Feature engineering,feature,Mã hóa cos của tháng,0,Feature mùa vụ dạng chu kỳ
+moist_convection_500,float64,kg/kg*Pa/s,Feature engineering,feature,Tích q_500 và w_500 làm proxy đối lưu ẩm,0,Feature pressure-level suy dẫn
+moist_convection_850,float64,kg/kg*Pa/s,Feature engineering,feature,Tích q_850 và w_850 làm proxy đối lưu ẩm tầng thấp,0,Feature pressure-level suy dẫn
+lapse_rate_850_500,float64,degC/m,Feature engineering,feature,Chênh nhiệt 850-500 hPa chia cho độ dày địa thế,0,Proxy ổn định khí quyển
+dew_point_depression,float64,degC,Feature engineering,feature,TEMP trừ DEWP,0,Proxy độ khô không khí
+du_850_500,float64,m/s,Feature engineering,feature,Độ đứt gió Đông-Tây giữa 850 hPa và 500 hPa,0,Feature động lực
+dv_850_500,float64,m/s,Feature engineering,feature,Độ đứt gió Bắc-Nam giữa 850 hPa và 500 hPa,0,Feature động lực
+wind_shear_mag,float64,m/s,Feature engineering,feature,Độ lớn vector đứt gió 850-500 hPa,0,Feature động lực
+du_dt_850,float64,m/s/day,Feature engineering,feature,Độ biến thiên ngày của u_850 theo từng trạm,0,Proxy động lực theo thời gian
+dv_dt_850,float64,m/s/day,Feature engineering,feature,Độ biến thiên ngày của v_850 theo từng trạm,0,Proxy động lực theo thời gian
+ageostrophic_signal,float64,m/s/day,Feature engineering,feature,Độ lớn biến thiên gió từ du_dt_850 và dv_dt_850,0,Feature động lực
+thickness_500_850,float64,m,Feature engineering,feature,Chênh độ cao địa thế giữa 500 hPa và 850 hPa,0,Proxy độ dày tầng khí quyển
+elevation_diff,float64,m,Feature engineering,feature,Độ cao trạm trừ độ cao địa thế bề mặt ERA5,0,Proxy sai lệch đại diện không gian
+moisture_flux_850,float64,kg/kg*m/s,Feature engineering,feature,q_850 nhân độ lớn gió tầng 850 hPa,0,Proxy vận chuyển ẩm
+PRCP_lag_1,float64,mm,Feature engineering,feature,PRCP ngày trước trong cùng trạm,0,Feature lịch sử mưa được phép dùng
+PRCP_lag_2,float64,mm,Feature engineering,feature,PRCP lùi hai ngày trong cùng trạm,0,Feature lịch sử mưa được phép dùng
+u_850_lag_1,float64,m/s,Feature engineering,feature,u_850 ngày trước trong cùng trạm,0,Feature lag
+u_850_lag_2,float64,m/s,Feature engineering,feature,u_850 lùi hai ngày trong cùng trạm,0,Feature lag
+v_850_lag_1,float64,m/s,Feature engineering,feature,v_850 ngày trước trong cùng trạm,0,Feature lag
+v_850_lag_2,float64,m/s,Feature engineering,feature,v_850 lùi hai ngày trong cùng trạm,0,Feature lag
+TEMP_lag_1,float64,degC,Feature engineering,feature,TEMP ngày trước trong cùng trạm,0,Feature lag
+TEMP_lag_2,float64,degC,Feature engineering,feature,TEMP lùi hai ngày trong cùng trạm,0,Feature lag
+DEWP_lag_1,float64,degC,Feature engineering,feature,DEWP ngày trước trong cùng trạm,0,Feature lag
+DEWP_lag_2,float64,degC,Feature engineering,feature,DEWP lùi hai ngày trong cùng trạm,0,Feature lag
+SLP_lag_1,float64,hPa,Feature engineering,feature,SLP ngày trước trong cùng trạm,0,Feature lag
+SLP_lag_2,float64,hPa,Feature engineering,feature,SLP lùi hai ngày trong cùng trạm,0,Feature lag
+VISIB_lag_1,float64,km,Feature engineering,feature,VISIB ngày trước trong cùng trạm,0,Feature lag
+VISIB_lag_2,float64,km,Feature engineering,feature,VISIB lùi hai ngày trong cùng trạm,0,Feature lag
+dew_point_depression_lag_1,float64,degC,Feature engineering,feature,Dew point depression ngày trước trong cùng trạm,0,Feature lag
+dew_point_depression_lag_2,float64,degC,Feature engineering,feature,Dew point depression lùi hai ngày trong cùng trạm,0,Feature lag
+moisture_flux_850_lag_1,float64,kg/kg*m/s,Feature engineering,feature,Moisture_flux_850 ngày trước trong cùng trạm,0,Feature lag
+moisture_flux_850_lag_2,float64,kg/kg*m/s,Feature engineering,feature,Moisture_flux_850 lùi hai ngày trong cùng trạm,0,Feature lag
+moist_convection_850_3d_mean,float64,kg/kg*Pa/s,Feature engineering,feature,Trung bình rolling 3 ngày của moist_convection_850 trong cùng trạm,0,Feature benchmark lịch sử cần shift nếu tuyên bố dự báo vận hành ngày mai
+dew_point_depression_3d_mean,float64,degC,Feature engineering,feature,Trung bình rolling 3 ngày của dew point depression trong cùng trạm,0,Feature benchmark lịch sử cần shift nếu tuyên bố dự báo vận hành ngày mai
+moisture_flux_850_3d_mean,float64,kg/kg*m/s,Feature engineering,feature,Trung bình rolling 3 ngày của moisture_flux_850 trong cùng trạm,0,Feature benchmark lịch sử cần shift nếu tuyên bố dự báo vận hành ngày mai
+TEMP_3d_mean,float64,degC,Feature engineering,feature,Trung bình rolling 3 ngày của TEMP trong cùng trạm,0,Feature benchmark lịch sử cần shift nếu tuyên bố dự báo vận hành ngày mai
+DEWP_3d_mean,float64,degC,Feature engineering,feature,Trung bình rolling 3 ngày của DEWP trong cùng trạm,0,Feature benchmark lịch sử cần shift nếu tuyên bố dự báo vận hành ngày mai
+SLP_3d_mean,float64,hPa,Feature engineering,feature,Trung bình rolling 3 ngày của SLP trong cùng trạm,0,Feature benchmark lịch sử cần shift nếu tuyên bố dự báo vận hành ngày mai
+VISIB_3d_mean,float64,km,Feature engineering,feature,Trung bình rolling 3 ngày của VISIB trong cùng trạm,0,Feature benchmark lịch sử cần shift nếu tuyên bố dự báo vận hành ngày mai
+moisture_flux_3d_sum,float64,kg/kg*m/s,Feature engineering,feature,Tổng rolling 3 ngày của moisture_flux_850 trong cùng trạm,0,Feature benchmark lịch sử cần shift nếu tuyên bố dự báo vận hành ngày mai
+PRCP_past_3d_mean,float64,mm,Feature engineering,feature,Trung bình PRCP 3 ngày quá khứ trong cùng trạm,0,Dùng shift(1) trước rolling
+PRCP_past_3d_sum,float64,mm,Feature engineering,feature,Tổng PRCP 3 ngày quá khứ trong cùng trạm,0,Dùng shift(1) trước rolling
+PRCP_label,int64,0/1,Feature engineering,target,Nhãn nhị phân ngày mưa,0,1 nếu PRCP > 0.1 mm và không dùng làm input model
+PRCP_log1p,float64,log-mm,Feature engineering,target,Target lượng mưa sau biến đổi log,0,log1p(PRCP) và không dùng làm input model
