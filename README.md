@@ -1,405 +1,186 @@
-# DS108 Final Project — Xây dựng bộ dữ liệu dự báo mưa tại Việt Nam
+# DS108 Final Project - Bộ dữ liệu benchmark dự báo mưa hằng ngày tại Việt Nam
 
 ## 1. Mục tiêu dự án
 
-Dự án tập trung vào **xây dựng và tiền xử lý bộ dữ liệu khí tượng đa nguồn** phục vụ bài toán phân tích/phân loại mưa tại Việt Nam.
+Dự án xây dựng một bộ dữ liệu khí tượng đa nguồn có tính tái lập để phục vụ phân tích và kiểm định tín hiệu cho bài toán mưa hằng ngày tại Việt Nam. Đóng góp chính của đồ án là quy trình xây dựng dataset, không phải tối ưu mô hình Machine Learning.
 
-Trọng tâm chính của đồ án là:
+Theo rubric môn DS108, dự án thuộc **Frame 1: Data Integration & Tabular Architecture**. Pipeline tích hợp dữ liệu bảng có cấu trúc từ nhiều nguồn khí tượng thực tế, khác nhau về cơ chế thu thập, độ phân giải không gian, độ phân giải thời gian, đơn vị vật lý và định dạng file:
 
-- Thu thập dữ liệu khí tượng từ nhiều nguồn.
-- Làm sạch và chuẩn hóa dữ liệu.
-- Bù khuyết dữ liệu thiếu có kiểm soát.
-- Phân tích EDA và chất lượng dữ liệu.
-- Tạo đặc trưng khí tượng.
-- Kiểm chứng dữ liệu bằng mô hình học máy.
+- NOAA GSOD: dữ liệu quan trắc trạm.
+- ERA5 single-level: dữ liệu tái phân tích bề mặt dạng lưới.
+- ERA5 pressure-level: dữ liệu tái phân tích khí quyển ở tầng 500 hPa và 850 hPa.
 
-> Lưu ý: Mô hình học máy chỉ dùng để **kiểm chứng tính hữu ích của bộ dữ liệu**, không phải đóng góp chính của đồ án.
+Giá trị thực tiễn của project là tạo một benchmark lịch sử minh bạch để nghiên cứu hiện tượng mưa và lượng mưa theo ngày tại một số trạm khí tượng Việt Nam. Dataset phù hợp cho phân tích học thuật và kiểm định chất lượng dữ liệu. Không nên mô tả project này như một hệ thống dự báo vận hành thời gian thực vì ERA5 là dữ liệu tái phân tích hậu nghiệm.
 
----
+## 2. Phạm vi dataset
 
-## 2. Nguồn dữ liệu
+- Giai đoạn dữ liệu: 2015-2024.
+- Phạm vi không gian: 5 trạm khí tượng đại diện tại Việt Nam.
+- Dataset cuối: `data/feature_engineering/feature_engineered_data.csv`.
+- Đơn vị dòng dữ liệu: một trạm trong một ngày sau làm sạch và tạo đặc trưng.
+- Kích thước artifact hiện tại: 18,255 dòng và 75 cột.
 
-| Nguồn | Vai trò |
+Các target chính:
+
+| Cột | Định nghĩa |
 |---|---|
-| NOAA GSOD | Dữ liệu quan trắc khí tượng tại trạm |
-| ERA5 Single-Level | Dữ liệu tái phân tích bề mặt |
-| ERA5 Pressure-Level | Dữ liệu khí quyển tầng 500 hPa và 850 hPa |
-| MEI v2 / ENSO | Chỉ số khí hậu quy mô lớn |
+| `PRCP` | Lượng mưa hằng ngày theo mm. |
+| `PRCP_label` | Nhãn nhị phân: 1 nếu `PRCP > 0.1 mm`, ngược lại 0. |
+| `PRCP_log1p` | Target hồi quy cho lượng mưa ngày mưa: `log(1 + PRCP)`. |
 
----
+Lưu ý quan trọng về nguồn target: `PRCP` là biến target chính. Trong pipeline silver, nếu GSOD thiếu `PRCP` và ERA5 `tp` có sẵn sau khi ghép không gian-thời gian, giá trị `PRCP` có thể được bù từ ERA5 `tp`. Chi tiết này cần được công bố trong report và datasheet vì nó ảnh hưởng đến cách hiểu cụm từ "lượng mưa thật".
 
-## 3. Cấu trúc thư mục
+## 3. Cấu trúc repository
 
 ```text
 project/
-│
-├── README.md
-├── requirements.txt
-│
-├── data/
-│   ├── raw/                      # Dữ liệu gốc, không chỉnh tay
-│   ├── clean/                    # Dữ liệu đã làm sạch/tích hợp
-│   ├── feature_engineering/      # Dữ liệu sau tạo đặc trưng
-│   └── processed/                # Dataset cuối cùng nếu cần
-│
-├── src/
-│   ├── 01_crawler_improved.py
-│   ├── 02_pressure_improved.py
-│   ├── 03_single_level_improved.py
-│   ├── 04_enso_improved.py
-│   ├── 05_to_silver_improved.py
-│   ├── 06_feature_engineering_improved.py
-│   └── 07_model_validation_improved.py
-│
-├── notebooks/
-│   └── 08_eda_quality_report.ipynb
-│
-├── reports/
-│   ├── data_quality/
-│   ├── eda_quality_report/
-│   └── model_validation/
-│
-├── docs/
-│   ├── data_dictionary.csv
-│   └── datasheet_for_dataset.md
-│
-└── models/
-    └── rainfall_validation/
+|-- README.md
+|-- requirements.txt
+|-- data/
+|   |-- raw/
+|   |   |-- gsod/
+|   |   |-- single/
+|   |   `-- pressure/
+|   |-- clean/
+|   |   |-- silver_data.csv
+|   |   |-- ERA5_single_level.parquet
+|   |   |-- ERA5_pressure_final.parquet
+|   |   |-- single_level/
+|   |   `-- pressure/
+|   `-- feature_engineering/
+|       `-- feature_engineered_data.csv
+|-- docs/
+|   |-- data_dictionary.csv
+|   `-- datasheet_for_dataset.md
+|-- notebooks/
+|   `-- eda_and_features_selection.ipynb
+|-- outputs/
+|   `-- model_final_single_table/
+|       `-- final_model_comparison.csv
+`-- src/
+    |-- _01_crawler.py
+    |-- _02_crawls_single.py
+    |-- _03_crawls_pressure.py
+    |-- _04_single_level.py
+    |-- _05_presure.py
+    |-- _06_to_silver.py
+    |-- _07_feature_engineering.py
+    `-- _08_model.py
 ```
 
----
+## 4. Cách chạy pipeline
 
-## 4. Các bước pipeline
-
-### Bước 1 — Crawl dữ liệu GSOD
-
-File:
-
-```text
-src/01_crawler_improved.py
-```
-
-Nhiệm vụ:
-
-- Tải dữ liệu GSOD giai đoạn 2015–2024.
-- Lưu dữ liệu thô ở tầng Bronze.
-- Lưu metadata: thời điểm crawl, URL nguồn, số dòng từng trạm, số năm thiếu.
-- Có retry/backoff khi lỗi mạng.
-
-Output:
-
-```text
-data/raw/bronze_data.csv
-data/raw/bronze_metadata.json
-data/raw/bronze_station_summary.csv
-```
-
----
-
-### Bước 2 — Xử lý ERA5 Pressure-Level
-
-File:
-
-```text
-src/02_pressure_improved.py
-```
-
-Nhiệm vụ:
-
-- Đọc dữ liệu ERA5 tầng 500 hPa và 850 hPa.
-- Chuyển đổi đơn vị.
-- Tổng hợp về dữ liệu ngày.
-- Kiểm tra:
-  - `z_500 > z_850`
-  - `t_850 > t_500`
-  - Không duplicate theo `time, latitude, longitude`
-
-Output:
-
-```text
-data/clean/ERA5_pressure_final.parquet
-reports/data_quality/pressure/
-```
-
----
-
-### Bước 3 — Xử lý ERA5 Single-Level
-
-File:
-
-```text
-src/03_single_level_improved.py
-```
-
-Nhiệm vụ:
-
-- Xử lý các biến bề mặt như nhiệt độ, điểm sương, áp suất, gió, lượng mưa.
-- Xử lý riêng biến `tp` để tránh double counting.
-- Kiểm tra mưa âm và cực trị bất thường.
-- So sánh ERA5 `tp` với GSOD `PRCP`.
-
-Output:
-
-```text
-data/clean/ERA5_single_level.parquet
-reports/data_quality/single_level/
-```
-
----
-
-### Bước 4 — Xử lý ENSO / MEI v2
-
-File:
-
-```text
-src/04_enso_improved.py
-```
-
-Nhiệm vụ:
-
-- Chuyển MEI từ dạng rộng sang dạng tháng.
-- Mapping:
-  - `DJ → tháng 1`
-  - `JF → tháng 2`
-  - ...
-  - `ND → tháng 12`
-- Tạo thêm:
-  - `ENSO_lag_1`
-  - `ENSO_lag_2`
-- Đồng bộ giai đoạn 2015–2024.
-
-Output:
-
-```text
-data/clean/enso_clean.csv
-reports/data_quality/enso/
-```
-
----
-
-### Bước 5 — Tích hợp và bù khuyết dữ liệu Silver
-
-File:
-
-```text
-src/05_to_silver_improved.py
-```
-
-Nhiệm vụ:
-
-- Làm sạch GSOD.
-- Chuẩn hóa đơn vị.
-- Chẩn đoán missingness trước imputation.
-- Tạo panel đầy đủ theo trạm-ngày.
-- Bù khuyết bằng ERA5.
-- Nội suy `VISIB` theo từng trạm, không nội suy chéo trạm.
-- So sánh trước/sau imputation.
-- Lưu cờ nguồn dữ liệu như `PRCP_source`, `TEMP_source`.
-
-Output:
-
-```text
-data/clean/silver_data_ver2.csv
-reports/data_quality/silver/
-```
-
----
-
-### Bước 6 — Feature Engineering
-
-File:
-
-```text
-src/06_feature_engineering_improved.py
-```
-
-Nhiệm vụ:
-
-- Tạo target duy nhất: `rain_target`.
-- Giữ lượng mưa gốc dưới dạng `PRCP_mm`.
-- Tạo đặc trưng thời gian, mùa vụ, độ ẩm, gió, flux, rolling, lag.
-- Có chế độ:
-  - `same_day_classification`
-  - `next_day_forecast`
-- Xử lý NaN sau lag/rolling.
-
-Output:
-
-```text
-data/feature_engineering/feature_engineered_data.csv
-data/feature_engineering/model_ready_data.csv
-reports/data_quality/feature_engineering/
-```
-
----
-
-### Bước 7 — Kiểm chứng bằng mô hình
-
-File:
-
-```text
-src/07_model_validation_improved.py
-```
-
-Nhiệm vụ:
-
-- Đọc dữ liệu feature engineering.
-- Dùng `rain_target` làm nhãn.
-- So sánh baseline và mô hình:
-  - Majority Baseline
-  - Logistic Regression
-  - Random Forest
-  - LightGBM
-- Tối ưu threshold trên validation set.
-- Báo cáo Precision, Recall, F1, ROC-AUC, PR-AUC, Brier Score.
-
-Output:
-
-```text
-models/rainfall_validation/
-reports/model_validation/
-```
-
----
-
-### Bước 8 — EDA Quality Report
-
-File:
-
-```text
-notebooks/08_eda_quality_report.ipynb
-```
-
-Nội dung:
-
-- Missingness heatmap.
-- Missing rate theo trạm.
-- Phân phối các biến chính.
-- Mùa vụ mưa theo tháng.
-- Mưa theo trạm.
-- Correlation heatmap.
-- Class imbalance.
-- So sánh GSOD vs ERA5.
-- Trước/sau imputation.
-- Feature importance.
-- Feature selection.
-
-Output:
-
-```text
-reports/eda_quality_report/
-```
-
----
-
-## 5. Cách chạy project
-
-Cài môi trường:
+Chạy các script từ thư mục gốc project.
 
 ```bash
-python -m venv .venv
+python src/_01_crawler.py
+python src/_02_crawls_single.py
+python src/_03_crawls_pressure.py
+python src/_04_single_level.py
+python src/_05_presure.py
+python src/_06_to_silver.py
+python src/_07_feature_engineering.py
+python src/_08_model.py
 ```
 
-Kích hoạt môi trường:
+Các bước pipeline:
 
-```bash
-# Windows
-.venv\Scripts\activate
+| Bước | Script | Vai trò |
+|---|---|---|
+| 1 | `src/_01_crawler.py` | Tải dữ liệu NOAA GSOD theo trạm-ngày và lưu metadata bronze. |
+| 2 | `src/_02_crawls_single.py` | Tải file ERA5 single-level dạng GRIB theo từng năm. |
+| 3 | `src/_03_crawls_pressure.py` | Tải file ERA5 pressure-level dạng GRIB theo từng năm. |
+| 4 | `src/_04_single_level.py` | Chuyển ERA5 single-level từ GRIB sang parquet sạch ở mức ngày. |
+| 5 | `src/_05_presure.py` | Chuyển ERA5 pressure-level từ GRIB sang parquet sạch ở mức ngày. |
+| 6 | `src/_06_to_silver.py` | Làm sạch GSOD, chuẩn hóa trạm-ngày, bù thiếu bằng ERA5 và ghép biến pressure-level. |
+| 7 | `src/_07_feature_engineering.py` | Tạo feature thời gian, nhiệt động lực, động lực gió, lag, rolling và target. |
+| 8 | `src/_08_model.py` | Kiểm định tín hiệu dataset bằng hai kịch bản LightGBM cuối. |
 
-# macOS/Linux
-source .venv/bin/activate
-```
-
-Cài thư viện:
-
-```bash
-pip install -r requirements.txt
-```
-
-Chạy pipeline:
-
-```bash
-python src/01_crawler_improved.py
-python src/02_pressure_improved.py
-python src/03_single_level_improved.py
-python src/04_enso_improved.py
-python src/05_to_silver_improved.py
-python src/06_feature_engineering_improved.py
-python src/07_model_validation_improved.py
-```
-
-Chạy notebook EDA:
-
-```bash
-jupyter notebook notebooks/08_eda_quality_report.ipynb
-```
-
----
-
-## 6. Quy tắc tái lập
+## 5. Quy tắc tái lập
 
 - Không chỉnh tay dữ liệu trong `data/raw/`.
-- Không xử lý dữ liệu bằng Excel.
-- Mọi bước tiền xử lý phải chạy bằng code.
-- Mọi bước imputation phải có report.
-- Target chỉ tạo ở bước 6.
-- Model ở bước 7 dùng `rain_target`, không tạo target lại từ `PRCP`.
-- Split train/validation/test phải theo thời gian.
-- Các report và hình phải lưu trong `reports/`.
+- Không làm sạch hoặc bù thiếu dữ liệu bằng Excel.
+- Mọi biến đổi dữ liệu phải được thực hiện bằng code trong `src/`.
+- Tách rõ dữ liệu thô, dữ liệu sạch, dữ liệu feature engineering, tài liệu và output.
+- Đánh giá model theo split thời gian.
+- Không fit imputation, scaling hoặc thống kê phụ thuộc dữ liệu trên toàn bộ dataset trước khi chia train/test.
 
----
+## 6. Kiểm soát data leakage
 
-## 7. Lưu ý data leakage
+Script model cuối loại các cột target và metadata khỏi input model:
 
-Không dùng các cột sau làm input model:
+- `PRCP`
+- `PRCP_label`
+- `PRCP_log1p`
+- `STATION`
+- `time`
+- các cột target cũ hoặc giống target như `Target`, `target_prcp_mm`, `rain_target`
 
-```text
-PRCP
-PRCP_mm
-target_prcp_mm
-target_time
-rain_target
-Target
-```
+Các feature lịch sử mưa được phép dùng chỉ gồm các biến nhìn về quá khứ như `PRCP_lag_*` và `PRCP_past_*`, được tạo bằng logic shift theo từng trạm. Nếu muốn khẳng định bài toán là dự báo vận hành ngày mai, cần kiểm tra lại toàn bộ feature ERA5 cùng ngày và rolling cùng ngày. Trong project hiện tại, dataset nên được mô tả là benchmark lịch sử.
 
-Nếu bài toán là **phân loại mưa cùng ngày**, có thể dùng biến khí tượng cùng ngày.
+## 7. Bảng so sánh model cuối
 
-Nếu bài toán là **dự báo ngày mai**, rolling phải dùng dữ liệu quá khứ:
+Model chỉ được dùng để kiểm định dataset có tín hiệu dự báo hay không.
 
-```python
-x.shift(1).rolling(window=3, min_periods=1).mean()
-```
-
-ERA5 là dữ liệu tái phân tích hậu nghiệm, nên chỉ phù hợp để xây dựng dataset lịch sử. Nếu nói là dự báo thời gian thực, cần giải thích rõ hoặc thay bằng dữ liệu forecast.
-
----
-
-## 8. Thành phẩm cần nộp
+Bảng cuối nằm tại:
 
 ```text
-data/clean/silver_data_ver2.csv
-data/feature_engineering/feature_engineered_data.csv
-data/feature_engineering/model_ready_data.csv
-docs/data_dictionary.csv
-docs/datasheet_for_dataset.md
-reports/data_quality/
-reports/eda_quality_report/
-reports/model_validation/
-README.md
-requirements.txt
+outputs/model_final_single_table/final_model_comparison.csv
 ```
 
----
+Bảng chỉ gồm hai dòng benchmark:
 
-## 9. Hạn chế
+- `LightGBM_1stage_Tweedie`: train trên toàn bộ ngày train và dự đoán trực tiếp `PRCP`.
+- `LightGBM_2stage_expected`: Stage 1 dự đoán xác suất mưa trên toàn bộ ngày train; Stage 2 dự đoán `PRCP_log1p` chỉ trên ngày mưa trong train; dự đoán cuối là kỳ vọng lượng mưa theo mm:
 
-- Chỉ dùng 5 trạm nên chưa đại diện tuyệt đối toàn bộ Việt Nam.
-- ERA5 là dữ liệu dạng lưới, không hoàn toàn giống quan trắc trạm.
-- ENSO là chỉ số tháng, ảnh hưởng đến mưa có thể gián tiếp.
-- Mô hình chỉ dùng để kiểm chứng dataset, không phải hệ thống dự báo vận hành.
+```text
+P(rain) * expm1(predicted PRCP_log1p | rainy)
+```
 
----
+Các metric chính:
 
-## 10. Kết luận
+- `mae_mm`
+- `rmse_mm`
+- `wape_percent`
+- `r2`
+- `bias_mean_pred_minus_true_mm`
 
-Dự án xây dựng một pipeline dữ liệu khí tượng đa nguồn theo hướng tái lập, có kiểm soát chất lượng và hạn chế data leakage. Thành phẩm chính là bộ dữ liệu đã được làm sạch, tích hợp, bù khuyết, tạo đặc trưng và phân tích EDA đầy đủ để phục vụ bài toán phân loại mưa tại Việt Nam.
+Các metric classification không đưa vào bảng chính để báo cáo tập trung vào kiểm định lượng mưa.
+
+## 8. EDA
+
+Notebook EDA chính:
+
+```text
+notebooks/eda_and_features_selection.ipynb
+```
+
+Notebook bao gồm:
+
+- tỷ lệ ngày mưa và không mưa;
+- mùa vụ mưa theo tháng;
+- khác biệt mưa theo trạm;
+- phân phối lượng mưa trên ngày mưa và tính zero-inflated/right-skewed;
+- phân phối feature theo nhóm mưa/không mưa;
+- tương quan đa biến và phân tích dư thừa feature;
+- kiểm tra duplicate, missingness, PRCP âm và tính nhất quán target.
+
+Khi nộp bài, nên export các hình và bảng EDA quan trọng sang `reports/eda_quality_report/`.
+
+## 9. Tài liệu đi kèm
+
+Các tài liệu hiện có:
+
+- `docs/data_dictionary.csv`
+- `docs/datasheet_for_dataset.md`
+
+Hai tài liệu này nên được trích dẫn trong phụ lục của technical report IEEE/ACM.
+
+## 10. Hạn chế và đạo đức
+
+- Dataset chỉ dùng 5 trạm nên không đại diện đầy đủ cho mọi vi khí hậu tại Việt Nam.
+- ERA5 là dữ liệu tái phân tích dạng lưới, không phải quan trắc trực tiếp tại trạm.
+- Ghép tọa độ trạm với grid ERA5 có thể gây sai lệch đại diện không gian.
+- Nếu GSOD thiếu mưa và `PRCP` được bù từ ERA5 `tp`, target trở thành một phần dữ liệu tái phân tích; cần công bố rõ.
+- Mất cân bằng giữa ngày mưa và không mưa là đặc tính tự nhiên, không phải lỗi dữ liệu.
+- Benchmark phù hợp cho kiểm định học thuật hồi cứu, không phù hợp để triển khai dự báo vận hành nếu chưa thay ERA5 bằng nguồn dữ liệu forecast-time.
