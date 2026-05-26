@@ -1,384 +1,510 @@
-"""Step 8: Train and evaluate two-stage rainfall model."""
+"""
+DS108 - Final model script: full scenario comparison with 5 metrics
+====================================================================
 
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import lightgbm as lgb
+Purpose
+-------
+Create ONE final comparison table for daily rainfall amount prediction.
+The script compares two complete prediction scenarios on all test days.
+
+Scenario 1: LightGBM_1stage_Tweedie
+    - One-stage baseline.
+    - Trained on all training days.
+    - Target: PRCP in millimeters.
+    - Final prediction: direct PRCP prediction.
+
+Scenario 2: LightGBM_2stage_expected
+    - Full two-stage hurdle model.
+    - Stage 1: LightGBM classifier trained on all training days.
+      Output: P(rain | X).
+    - Stage 2: LightGBM regressor trained ONLY on rainy training days.
+      Target: PRCP_log1p = log(1 + PRCP).
+      Output is converted back to millimeters with expm1.
+    - Final prediction: P(rain | X) * E(PRCP | rain, X).
+
+Final output
+------------
+outputs/model_final_single_table/final_model_comparison.csv
+
+Run
+---
+python src/_08_model.py
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import warnings
 from pathlib import Path
-from typing import Tuple
-from sklearn.metrics import (
-    accuracy_score,
-    precision_score,
-    recall_score,
-    f1_score,
-    fbeta_score,
-    roc_auc_score,
-    average_precision_score,
-    brier_score_loss,
-    classification_report,
-    confusion_matrix,
-    ConfusionMatrixDisplay,
-    mean_absolute_error,
-    mean_squared_error,
-    r2_score,
-)
+from typing import Dict, Iterable, List, Tuple, Union
 
-# CONFIGURATION
+import numpy as np
+import pandas as pd
+from sklearn.impute import SimpleImputer
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.pipeline import Pipeline
 
-RANDOM_SEED = 108
+try:
+    from lightgbm import LGBMClassifier, LGBMRegressor
+except ImportError as exc:  # pragma: no cover
+    raise ImportError("LightGBM is required. Install it with: pip install lightgbm") from exc
 
-TRAIN_END = "2023-01-01"
-VALID_START = "2023-01-01"
-VALID_END = "2024-01-01"
-TEST_START = "2024-01-01"
+warnings.filterwarnings("ignore")
 
-TARGET_CLS = "PRCP_label"
-TARGET_REG = "PRCP"
-TARGET_REG_LOG = "PRCP_log1p"
 
-COLS_TO_DROP = [
-    "STATION",
-    "time",
-    "PRCP",
-    "PRCP_label",
-    "PRCP_log1p",
+# =============================================================================
+# Project paths
+# =============================================================================
+SCRIPT_PATH = Path(__file__).resolve()
+BASE_DIR = SCRIPT_PATH.parent.parent if SCRIPT_PATH.parent.name.lower() == "src" else SCRIPT_PATH.parent
+
+DEFAULT_INPUT_CSV = BASE_DIR / "data" / "feature_engineering" / "feature_engineered_data.csv"
+DEFAULT_OUTPUT_DIR = BASE_DIR / "outputs" / "model_final_single_table"
+
+
+# =============================================================================
+# Columns and split rules
+# =============================================================================
+TIME_COL = "time"
+STATION_COL = "STATION"
+TARGET_MM = "PRCP"
+TARGET_CLASS = "PRCP_label"
+TARGET_LOG = "PRCP_log1p"
+RAIN_THRESHOLD_MM = 0.1
+
+# These columns must never be used as input features because they are metadata,
+# identifiers, timestamps, current-day targets, or columns derived directly from
+# the current-day target.
+DROP_COLS = [
+    STATION_COL,
+    TIME_COL,
+    "date",
+    "Target",
+    TARGET_MM,
+    TARGET_CLASS,
+    TARGET_LOG,
 ]
 
-CLASSIFIER_PARAMS = {
-    "objective": "binary",
-    "metric": "auc",
-    "learning_rate": 0.02,
-    "num_leaves": 48,
-    "feature_fraction": 0.8,
-    "bagging_fraction": 0.7,
-    "bagging_freq": 5,
-    "is_unbalance": True,
-    "seed": RANDOM_SEED,
-    "verbosity": -1,
-}
+TRAIN_END = pd.Timestamp("2023-01-01")  # train: 2015-2022
+VALID_END = pd.Timestamp("2024-01-01")  # valid: 2023, test: 2024
 
-REGRESSOR_PARAMS = {
-    "objective": "regression",
-    "metric": "rmse",
-    "learning_rate": 0.02,
-    "num_leaves": 48,
-    "feature_fraction": 0.8,
-    "bagging_fraction": 0.7,
-    "bagging_freq": 5,
-    "seed": RANDOM_SEED,
-    "verbosity": -1,
-}
+FINAL_TABLE_COLUMNS = [
+    "model",
+    "mae_mm",
+    "rmse_mm",
+    "wape_percent",
+    "r2",
+    "bias_mean_pred_minus_true_mm",
+]
 
-NUM_BOOST_ROUNDS = 5000
-EARLY_STOPPING_ROUNDS = 150
-LOG_EVALUATION_PERIOD = 100
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-INPUT_CSV = BASE_DIR / "data" / "feature_engineering" / "feature_engineered_data.csv"
-OUTPUT_DIR = BASE_DIR / "models" / "rainfall_validation"
-
-# 1. DATA LOADING & PREPROCESSING
-
-def _load_and_prepare_data(csv_path: str | Path) -> pd.DataFrame:
-    df = pd.read_csv(csv_path)
-    df["time"] = pd.to_datetime(df["time"], errors="coerce")
-    df = df.dropna(subset=["time"]).reset_index(drop=True)
-
-    required_targets = [TARGET_CLS, TARGET_REG, TARGET_REG_LOG]
-    missing = [col for col in required_targets if col not in df.columns]
-
-    if missing:
-        raise KeyError(f"Thiếu target columns trong feature file: {missing}")
-
-    df[TARGET_CLS] = pd.to_numeric(df[TARGET_CLS], errors="coerce").astype(int)
-    df[TARGET_REG] = pd.to_numeric(df[TARGET_REG], errors="coerce").fillna(0).clip(lower=0)
-    df[TARGET_REG_LOG] = pd.to_numeric(df[TARGET_REG_LOG], errors="coerce").fillna(
-        np.log1p(df[TARGET_REG])
+# =============================================================================
+# Basic utilities
+# =============================================================================
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Compare full 1-stage Tweedie and full 2-stage hurdle rainfall models."
     )
+    parser.add_argument("--input-csv", type=str, default=str(DEFAULT_INPUT_CSV))
+    parser.add_argument("--output-dir", type=str, default=str(DEFAULT_OUTPUT_DIR))
+    parser.add_argument("--random-state", type=int, default=42)
+    parser.add_argument("--n-estimators", type=int, default=500)
+    parser.add_argument("--learning-rate", type=float, default=0.03)
+    parser.add_argument("--num-leaves", type=int, default=31)
+    parser.add_argument("--tweedie-power", type=float, default=1.3)
+    parser.add_argument("--n-jobs", type=int, default=-1)
+    return parser.parse_args()
 
-    if "STATION" in df.columns:
-        df["STATION"] = df["STATION"].astype(str)
 
-    return df
+def resolve_path(path_like: Union[str, Path]) -> Path:
+    path = Path(path_like)
+    return path if path.is_absolute() else (BASE_DIR / path).resolve()
 
-def _split_train_valid_test(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    train_df = df[df["time"] < TRAIN_END].copy()
-    valid_df = df[(df["time"] >= VALID_START) & (df["time"] < VALID_END)].copy()
-    test_df = df[df["time"] >= TEST_START].copy()
+
+def ensure_dir(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+
+
+def clean_old_outputs(output_dir: Path) -> None:
+    """Remove known old artifacts from previous versions to avoid confusion."""
+    old_files = [
+        "final_model_comparison.csv",
+        "rainy_day_regression_comparison.csv",
+        "stage1_classifier_support_metrics.csv",
+        "end_to_end_comparison.csv",
+        "test_predictions_all_days.csv",
+        "test_rainy_day_predictions.csv",
+        "used_full_features.csv",
+        "used_features.csv",
+        "feature_importance_1stage_tweedie.csv",
+        "feature_importance_stage1_classifier.csv",
+        "feature_importance_stage2_regression.csv",
+        "feature_importance_stage2_regressor.csv",
+        "model_config.json",
+    ]
+    for filename in old_files:
+        file_path = output_dir / filename
+        if file_path.exists() and file_path.is_file():
+            file_path.unlink()
+
+
+def round_numeric(df: pd.DataFrame, digits: int = 4) -> pd.DataFrame:
+    out = df.copy()
+    numeric_cols = out.select_dtypes(include=[np.number]).columns
+    out[numeric_cols] = out[numeric_cols].round(digits)
+    return out
+
+
+# =============================================================================
+# Data preparation
+# =============================================================================
+def load_and_prepare_data(input_csv: Path) -> pd.DataFrame:
+    if not input_csv.exists():
+        raise FileNotFoundError(f"Input file not found: {input_csv}")
+
+    df = pd.read_csv(input_csv)
+
+    required_cols = {TIME_COL, TARGET_MM}
+    missing_cols = sorted(required_cols - set(df.columns))
+    if missing_cols:
+        raise ValueError(f"Missing required columns: {missing_cols}")
+
+    df[TIME_COL] = pd.to_datetime(df[TIME_COL], errors="coerce")
+    if df[TIME_COL].isna().any():
+        raise ValueError(f"Column '{TIME_COL}' contains invalid datetime values.")
+
+    df[TARGET_MM] = pd.to_numeric(df[TARGET_MM], errors="coerce")
+    if df[TARGET_MM].isna().any():
+        raise ValueError(f"Column '{TARGET_MM}' contains missing or non-numeric values.")
+    if not np.isfinite(df[TARGET_MM].values).all():
+        raise ValueError(f"Column '{TARGET_MM}' contains inf/-inf values.")
+    if (df[TARGET_MM] < 0).any():
+        n_bad = int((df[TARGET_MM] < 0).sum())
+        raise ValueError(f"Column '{TARGET_MM}' contains {n_bad} negative values.")
+
+    # Recreate target columns from PRCP to guarantee consistency.
+    # This also handles the case where PRCP_label or PRCP_log1p is missing.
+    df[TARGET_CLASS] = (df[TARGET_MM] > RAIN_THRESHOLD_MM).astype(int)
+    df[TARGET_LOG] = np.log1p(df[TARGET_MM])
+
+    return df.sort_values(TIME_COL).reset_index(drop=True)
+
+
+def time_split(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    train_df = df[df[TIME_COL] < TRAIN_END].copy()
+    valid_df = df[(df[TIME_COL] >= TRAIN_END) & (df[TIME_COL] < VALID_END)].copy()
+    test_df = df[df[TIME_COL] >= VALID_END].copy()
+
+    if train_df.empty or valid_df.empty or test_df.empty:
+        raise ValueError("Time split produced an empty train/valid/test subset.")
 
     return train_df, valid_df, test_df
 
-def _get_feature_columns(df: pd.DataFrame) -> list[str]:
-    drop_cols = [col for col in COLS_TO_DROP if col in df.columns]
 
-    X = df.drop(columns=drop_cols, errors="ignore")
-    X = X.select_dtypes(include=[np.number])
+def select_feature_columns(df: pd.DataFrame) -> List[str]:
+    feature_cols = [
+        col
+        for col in df.columns
+        if col not in DROP_COLS and pd.api.types.is_numeric_dtype(df[col])
+    ]
 
-    return X.columns.tolist()
+    if not feature_cols:
+        raise ValueError("No numeric feature columns found after dropping leakage columns.")
 
-def _prepare_xy(df: pd.DataFrame, feature_cols: list[str], target_col: str):
-    X = df[feature_cols].copy()
-    y = df[target_col].copy()
-    return X, y
+    leakage = sorted(set(feature_cols) & set(DROP_COLS))
+    if leakage:
+        raise AssertionError(f"Leakage columns remain in features: {leakage}")
 
-# 2. STAGE 1 - CLASSIFICATION
+    return feature_cols
 
-def train_classifier(train_df: pd.DataFrame, valid_df: pd.DataFrame, feature_cols: list[str]) -> lgb.Booster:
-    print("\n=== STAGE 1: TRAIN RAIN / NO-RAIN CLASSIFIER ===")
 
-    X_train, y_train = _prepare_xy(train_df, feature_cols, TARGET_CLS)
-    X_valid, y_valid = _prepare_xy(valid_df, feature_cols, TARGET_CLS)
+def make_x(df: pd.DataFrame, feature_cols: Iterable[str]) -> pd.DataFrame:
+    return df.loc[:, list(feature_cols)].replace([np.inf, -np.inf], np.nan)
 
-    dtrain = lgb.Dataset(X_train, label=y_train)
-    dvalid = lgb.Dataset(X_valid, label=y_valid, reference=dtrain)
 
-    model = lgb.train(
-        CLASSIFIER_PARAMS,
-        dtrain,
-        num_boost_round=NUM_BOOST_ROUNDS,
-        valid_sets=[dtrain, dvalid],
-        valid_names=["train", "valid"],
-        callbacks=[
-            lgb.early_stopping(stopping_rounds=EARLY_STOPPING_ROUNDS),
-            lgb.log_evaluation(period=LOG_EVALUATION_PERIOD),
+def clip_nonnegative(values: np.ndarray) -> np.ndarray:
+    return np.maximum(np.asarray(values, dtype=float), 0.0)
+
+
+# =============================================================================
+# Model builders
+# =============================================================================
+def build_one_stage_tweedie(args: argparse.Namespace) -> Pipeline:
+    """One-stage baseline: one model predicts PRCP directly on all training days."""
+    return Pipeline(
+        steps=[
+            ("imputer", SimpleImputer(strategy="median")),
+            (
+                "model",
+                LGBMRegressor(
+                    objective="tweedie",
+                    tweedie_variance_power=args.tweedie_power,
+                    n_estimators=args.n_estimators,
+                    learning_rate=args.learning_rate,
+                    num_leaves=args.num_leaves,
+                    subsample=0.8,
+                    colsample_bytree=0.8,
+                    reg_alpha=0.1,
+                    reg_lambda=0.1,
+                    random_state=args.random_state,
+                    n_jobs=args.n_jobs,
+                    verbose=-1,
+                ),
+            ),
+        ]
+    )
+
+
+def build_stage1_classifier(args: argparse.Namespace) -> Pipeline:
+    """Stage 1 of the hurdle model: predict P(rain | X) on all training days."""
+    return Pipeline(
+        steps=[
+            ("imputer", SimpleImputer(strategy="median")),
+            (
+                "model",
+                LGBMClassifier(
+                    objective="binary",
+                    n_estimators=args.n_estimators,
+                    learning_rate=args.learning_rate,
+                    num_leaves=args.num_leaves,
+                    subsample=0.8,
+                    colsample_bytree=0.8,
+                    reg_alpha=0.1,
+                    reg_lambda=0.1,
+                    class_weight="balanced",
+                    random_state=args.random_state,
+                    n_jobs=args.n_jobs,
+                    verbose=-1,
+                ),
+            ),
+        ]
+    )
+
+
+def build_stage2_regressor(args: argparse.Namespace) -> Pipeline:
+    """Stage 2 of the hurdle model: predict log1p(PRCP) only for rainy days."""
+    return Pipeline(
+        steps=[
+            ("imputer", SimpleImputer(strategy="median")),
+            (
+                "model",
+                LGBMRegressor(
+                    objective="regression",
+                    n_estimators=args.n_estimators,
+                    learning_rate=args.learning_rate,
+                    num_leaves=args.num_leaves,
+                    subsample=0.8,
+                    colsample_bytree=0.8,
+                    reg_alpha=0.1,
+                    reg_lambda=0.1,
+                    random_state=args.random_state,
+                    n_jobs=args.n_jobs,
+                    verbose=-1,
+                ),
+            ),
+        ]
+    )
+
+
+# =============================================================================
+# Prediction helpers
+# =============================================================================
+def predict_one_stage_mm(model: Pipeline, df: pd.DataFrame, feature_cols: List[str]) -> np.ndarray:
+    pred = model.predict(make_x(df, feature_cols))
+    return clip_nonnegative(pred)
+
+
+def predict_stage1_prob(model: Pipeline, df: pd.DataFrame, feature_cols: List[str]) -> np.ndarray:
+    prob = model.predict_proba(make_x(df, feature_cols))[:, 1]
+    return np.asarray(prob, dtype=float)
+
+
+def predict_stage2_amount_mm(model: Pipeline, df: pd.DataFrame, feature_cols: List[str]) -> np.ndarray:
+    pred_log = model.predict(make_x(df, feature_cols))
+    pred_mm = np.expm1(pred_log)
+    return clip_nonnegative(pred_mm)
+
+
+# =============================================================================
+# Final metrics: only MAE, RMSE, WAPE, R2, Bias
+# =============================================================================
+def rmse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    return float(np.sqrt(mean_squared_error(y_true, y_pred)))
+
+
+def wape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    denominator = float(np.sum(np.abs(y_true)))
+    if denominator <= 0:
+        return np.nan
+    return float(np.sum(np.abs(y_true - y_pred)) / denominator * 100.0)
+
+
+def final_metrics_row(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    *,
+    model: str,
+) -> Dict[str, Union[str, int, float]]:
+    y_true = np.asarray(y_true, dtype=float)
+    y_pred = np.asarray(y_pred, dtype=float)
+
+    row = {
+        "model": model,
+        "mae_mm": float(mean_absolute_error(y_true, y_pred)),
+        "rmse_mm": rmse(y_true, y_pred),
+        "wape_percent": wape(y_true, y_pred),
+        "r2": float(r2_score(y_true, y_pred)),
+        "bias_mean_pred_minus_true_mm": float(np.mean(y_pred - y_true)),
+    }
+    return row
+
+
+# =============================================================================
+# Main pipeline
+# =============================================================================
+def main() -> None:
+    args = parse_args()
+
+    input_csv = resolve_path(args.input_csv)
+    output_dir = resolve_path(args.output_dir)
+    ensure_dir(output_dir)
+    clean_old_outputs(output_dir)
+
+    print(f"Input : {input_csv}")
+    print(f"Output: {output_dir}")
+
+    df = load_and_prepare_data(input_csv)
+    train_df, valid_df, test_df = time_split(df)
+    feature_cols = select_feature_columns(df)
+
+    print("\nTime split")
+    print(f"Train: {train_df[TIME_COL].min().date()} -> {train_df[TIME_COL].max().date()} | n={len(train_df):,}")
+    print(f"Valid: {valid_df[TIME_COL].min().date()} -> {valid_df[TIME_COL].max().date()} | n={len(valid_df):,}")
+    print(f"Test : {test_df[TIME_COL].min().date()} -> {test_df[TIME_COL].max().date()} | n={len(test_df):,}")
+    print(f"\nUsing FULL features only: {len(feature_cols)} numeric features")
+
+    # -------------------------------------------------------------------------
+    # Scenario 1: LightGBM 1-stage Tweedie regression
+    # -------------------------------------------------------------------------
+    print("\n[1/2] Training Scenario 1: LightGBM 1-stage Tweedie regression...")
+    one_stage = build_one_stage_tweedie(args)
+    one_stage.fit(
+        make_x(train_df, feature_cols),
+        train_df[TARGET_MM].values.astype(float),
+    )
+
+    # -------------------------------------------------------------------------
+    # Scenario 2: LightGBM full 2-stage hurdle model
+    # -------------------------------------------------------------------------
+    print("[2/2] Training Scenario 2: LightGBM full 2-stage hurdle model...")
+
+    # Stage 1 is trained on all training days.
+    stage1 = build_stage1_classifier(args)
+    stage1.fit(
+        make_x(train_df, feature_cols),
+        train_df[TARGET_CLASS].values.astype(int),
+    )
+
+    # Stage 2 is trained ONLY on rainy training days.
+    rainy_train_mask = train_df["PRCP_label"].astype(int).values == 1
+    if rainy_train_mask.sum() == 0:
+        raise ValueError("No rainy days in training data. Stage 2 cannot be trained.")
+
+    stage2 = build_stage2_regressor(args)
+    stage2.fit(
+        make_x(train_df.loc[rainy_train_mask], feature_cols),
+        train_df.loc[rainy_train_mask, TARGET_LOG].values.astype(float),
+    )
+
+    # -------------------------------------------------------------------------
+    # Final predictions on all test days
+    # -------------------------------------------------------------------------
+    y_test = test_df[TARGET_MM].values.astype(float)
+
+    # Scenario 1 final prediction.
+    pred_1stage_test = predict_one_stage_mm(one_stage, test_df, feature_cols)
+
+    # Scenario 2 full hurdle final prediction.
+    pred_stage1_prob_test = predict_stage1_prob(stage1, test_df, feature_cols)
+    pred_stage2_amount_test = predict_stage2_amount_mm(stage2, test_df, feature_cols)
+
+    # Required full two-stage formula:
+    # E(PRCP | X) = P(rain | X) * E(PRCP | rain, X)
+    pred_2stage_expected_test = pred_stage1_prob_test * pred_stage2_amount_test
+
+    # -------------------------------------------------------------------------
+    # ONE FINAL COMPARISON TABLE: two complete scenarios on all test days
+    # -------------------------------------------------------------------------
+    final_df = pd.DataFrame(
+        [
+            final_metrics_row(
+                y_test,
+                pred_1stage_test,
+                model="LightGBM_1stage_Tweedie",
+            ),
+            final_metrics_row(
+                y_test,
+                pred_2stage_expected_test,
+                model="LightGBM_2stage_expected",
+            ),
         ],
+        columns=FINAL_TABLE_COLUMNS,
     )
 
-    print(f"✅ Stage 1 complete. Best iteration: {model.best_iteration}")
-    return model
+    final_path = output_dir / "final_model_comparison.csv"
+    final_df.to_csv(final_path, index=False)
 
-def find_best_threshold(y_true: pd.Series, y_prob: np.ndarray) -> tuple[float, pd.DataFrame]:
-    rows = []
-
-    for threshold in np.arange(0.05, 0.951, 0.005):
-        y_pred = (y_prob >= threshold).astype(int)
-
-        rows.append({
-            "threshold": threshold,
-            "precision_rain": precision_score(y_true, y_pred, zero_division=0),
-            "recall_rain": recall_score(y_true, y_pred, zero_division=0),
-            "f1_rain": f1_score(y_true, y_pred, zero_division=0),
-            "f2_rain": fbeta_score(y_true, y_pred, beta=2, zero_division=0),
-        })
-
-    threshold_df = pd.DataFrame(rows)
-    best_row = threshold_df.sort_values("f1_rain", ascending=False).iloc[0]
-
-    return float(best_row["threshold"]), threshold_df
-
-def evaluate_classifier(y_true: pd.Series, y_prob: np.ndarray, threshold: float) -> dict:
-    y_pred = (y_prob >= threshold).astype(int)
-
-    return {
-        "threshold": threshold,
-        "accuracy": accuracy_score(y_true, y_pred),
-        "precision_rain": precision_score(y_true, y_pred, zero_division=0),
-        "recall_rain": recall_score(y_true, y_pred, zero_division=0),
-        "f1_rain": f1_score(y_true, y_pred, zero_division=0),
-        "f2_rain": fbeta_score(y_true, y_pred, beta=2, zero_division=0),
-        "roc_auc": roc_auc_score(y_true, y_prob),
-        "pr_auc": average_precision_score(y_true, y_prob),
-        "brier_score": brier_score_loss(y_true, y_prob),
+    # JSON config is not a comparison table; it is saved only for reproducibility.
+    config = {
+        "main_output": str(final_path),
+        "input_csv": str(input_csv),
+        "output_dir": str(output_dir),
+        "final_comparison": "LightGBM_1stage_Tweedie vs LightGBM_2stage_expected on all_test_days",
+        "final_table_columns": FINAL_TABLE_COLUMNS,
+        "metrics": ["MAE", "RMSE", "WAPE", "R2", "Bias"],
+        "target": TARGET_MM,
+        "rain_label_definition": f"{TARGET_MM} > {RAIN_THRESHOLD_MM} mm",
+        "two_stage_formula": "pred_2stage_expected_test = pred_stage1_prob_test * pred_stage2_amount_test",
+        "stage2_training_rule": "Stage 2 is trained only on train rows where PRCP_label == 1.",
+        "split": {
+            "train": [str(train_df[TIME_COL].min().date()), str(train_df[TIME_COL].max().date())],
+            "valid": [str(valid_df[TIME_COL].min().date()), str(valid_df[TIME_COL].max().date())],
+            "test": [str(test_df[TIME_COL].min().date()), str(test_df[TIME_COL].max().date())],
+        },
+        "n_rows": {
+            "train": int(len(train_df)),
+            "valid": int(len(valid_df)),
+            "test": int(len(test_df)),
+            "stage2_train_rainy_days": int(rainy_train_mask.sum()),
+        },
+        "n_features": int(len(feature_cols)),
+        "drop_cols_from_features": DROP_COLS,
+        "lightgbm_params": {
+            "n_estimators": args.n_estimators,
+            "learning_rate": args.learning_rate,
+            "num_leaves": args.num_leaves,
+            "tweedie_power": args.tweedie_power,
+            "random_state": args.random_state,
+            "n_jobs": args.n_jobs,
+        },
     }
+    with open(output_dir / "model_config.json", "w", encoding="utf-8") as f:
+        json.dump(config, f, ensure_ascii=False, indent=2)
 
-# 3. STAGE 2 - REGRESSION ON RAINY DAYS
+    pd.set_option("display.max_columns", None)
+    pd.set_option("display.width", 180)
 
-def train_regressor(train_df: pd.DataFrame, valid_df: pd.DataFrame, feature_cols: list[str]) -> lgb.Booster:
-    print("\n=== STAGE 2: TRAIN RAINFALL AMOUNT REGRESSOR ===")
+    print("\n" + "=" * 100)
+    print("FINAL TABLE: full scenario comparison on ALL TEST DAYS")
+    print("Metrics: MAE, RMSE, WAPE, R2, Bias")
+    print("=" * 100)
+    print(round_numeric(final_df, 4))
 
-    train_rain = train_df[train_df[TARGET_CLS] == 1].copy()
-    valid_rain = valid_df[valid_df[TARGET_CLS] == 1].copy()
+    print("\nDone.")
+    print(f"Final comparison table: {final_path}")
+    print(f"Config               : {output_dir / 'model_config.json'}")
 
-    X_train, y_train = _prepare_xy(train_rain, feature_cols, TARGET_REG_LOG)
-    X_valid, y_valid = _prepare_xy(valid_rain, feature_cols, TARGET_REG_LOG)
-
-    dtrain = lgb.Dataset(X_train, label=y_train)
-    dvalid = lgb.Dataset(X_valid, label=y_valid, reference=dtrain)
-
-    model = lgb.train(
-        REGRESSOR_PARAMS,
-        dtrain,
-        num_boost_round=NUM_BOOST_ROUNDS,
-        valid_sets=[dtrain, dvalid],
-        valid_names=["train", "valid"],
-        callbacks=[
-            lgb.early_stopping(stopping_rounds=EARLY_STOPPING_ROUNDS),
-            lgb.log_evaluation(period=LOG_EVALUATION_PERIOD),
-        ],
-    )
-
-    print(f"✅ Stage 2 complete. Best iteration: {model.best_iteration}")
-    return model
-
-def evaluate_regressor_on_rainy_days(
-    model: lgb.Booster,
-    df: pd.DataFrame,
-    feature_cols: list[str],
-) -> dict:
-    rainy_df = df[df[TARGET_CLS] == 1].copy()
-
-    X = rainy_df[feature_cols]
-    y_true = rainy_df[TARGET_REG].values
-
-    pred_log = model.predict(X, num_iteration=model.best_iteration)
-    y_pred = np.expm1(pred_log).clip(min=0)
-
-    rmse = mean_squared_error(y_true, y_pred) ** 0.5
-
-    return {
-        "mae_rainy_days": mean_absolute_error(y_true, y_pred),
-        "rmse_rainy_days": rmse,
-        "r2_rainy_days": r2_score(y_true, y_pred),
-        "n_rainy_days": len(rainy_df),
-    }
-
-# 4. TWO-STAGE EVALUATION
-
-def evaluate_two_stage(
-    classifier: lgb.Booster,
-    regressor: lgb.Booster,
-    df: pd.DataFrame,
-    feature_cols: list[str],
-    threshold: float,
-) -> tuple[dict, pd.DataFrame]:
-    X = df[feature_cols]
-
-    y_true_cls = df[TARGET_CLS].values
-    y_true_mm = df[TARGET_REG].values
-
-    rain_prob = classifier.predict(X, num_iteration=classifier.best_iteration)
-    rain_pred = (rain_prob >= threshold).astype(int)
-
-    amount_log = regressor.predict(X, num_iteration=regressor.best_iteration)
-    amount_if_rain = np.expm1(amount_log).clip(min=0)
-
-    hard_pred_mm = np.where(rain_pred == 1, amount_if_rain, 0)
-    expected_pred_mm = rain_prob * amount_if_rain
-
-    cls_metrics = evaluate_classifier(y_true_cls, rain_prob, threshold)
-
-    hard_rmse = mean_squared_error(y_true_mm, hard_pred_mm) ** 0.5
-    expected_rmse = mean_squared_error(y_true_mm, expected_pred_mm) ** 0.5
-
-    metrics = {
-        **cls_metrics,
-        "mae_hard_mm": mean_absolute_error(y_true_mm, hard_pred_mm),
-        "rmse_hard_mm": hard_rmse,
-        "mae_expected_mm": mean_absolute_error(y_true_mm, expected_pred_mm),
-        "rmse_expected_mm": expected_rmse,
-    }
-
-    pred_df = df[["time", "STATION"]].copy() if "STATION" in df.columns else df[["time"]].copy()
-    pred_df["y_true_label"] = y_true_cls
-    pred_df["y_true_prcp_mm"] = y_true_mm
-    pred_df["rain_probability"] = rain_prob
-    pred_df["rain_probability_percent"] = rain_prob * 100
-    pred_df["y_pred_label"] = rain_pred
-    pred_df["predicted_rainfall_if_rain_mm"] = amount_if_rain
-    pred_df["predicted_rainfall_hard_mm"] = hard_pred_mm
-    pred_df["expected_rainfall_mm"] = expected_pred_mm
-
-    return metrics, pred_df
-
-# 5. VISUALIZATION
-
-def plot_confusion_matrix(y_true, y_pred) -> None:
-    ConfusionMatrixDisplay.from_predictions(y_true, y_pred, cmap="Blues")
-    plt.title("Confusion Matrix - Stage 1 Rain Classification")
-    plt.show()
-
-def plot_feature_importance(model: lgb.Booster, max_features: int = 15, title: str = "Feature Importance") -> None:
-    lgb.plot_importance(model, max_num_features=max_features, importance_type="gain")
-    plt.title(title)
-    plt.show()
-
-# MAIN PIPELINE
-
-def train_rainfall_model(input_csv: str | Path = None) -> dict:
-    if input_csv is None:
-        input_csv = INPUT_CSV
-
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-    print("📥 Đang tải dữ liệu...")
-    df = _load_and_prepare_data(input_csv)
-
-    print("📊 Đang chia dữ liệu theo thời gian...")
-    train_df, valid_df, test_df = _split_train_valid_test(df)
-
-    print(f"   - Train: {len(train_df):,} mẫu")
-    print(f"   - Valid: {len(valid_df):,} mẫu")
-    print(f"   - Test:  {len(test_df):,} mẫu")
-
-    feature_cols = _get_feature_columns(df)
-
-    pd.DataFrame({"feature": feature_cols}).to_csv(
-        OUTPUT_DIR / "used_feature_columns.csv",
-        index=False,
-    )
-
-    print(f"   - Số feature dùng để train: {len(feature_cols)}")
-
-    classifier = train_classifier(train_df, valid_df, feature_cols)
-
-    valid_X = valid_df[feature_cols]
-    valid_prob = classifier.predict(valid_X, num_iteration=classifier.best_iteration)
-    best_threshold, threshold_df = find_best_threshold(valid_df[TARGET_CLS], valid_prob)
-
-    threshold_df.to_csv(OUTPUT_DIR / "threshold_search_validation.csv", index=False)
-
-    print(f"\n✅ Best threshold on validation: {best_threshold:.3f}")
-
-    regressor = train_regressor(train_df, valid_df, feature_cols)
-
-    print("\n=== VALIDATION EVALUATION ===")
-    valid_metrics, valid_pred = evaluate_two_stage(
-        classifier,
-        regressor,
-        valid_df,
-        feature_cols,
-        best_threshold,
-    )
-
-    print("\n=== TEST EVALUATION ===")
-    test_metrics, test_pred = evaluate_two_stage(
-        classifier,
-        regressor,
-        test_df,
-        feature_cols,
-        best_threshold,
-    )
-
-    rainy_reg_metrics = evaluate_regressor_on_rainy_days(
-        regressor,
-        test_df,
-        feature_cols,
-    )
-
-    test_metrics.update(rainy_reg_metrics)
-
-    metrics_df = pd.DataFrame([
-        {"split": "validation", **valid_metrics},
-        {"split": "test", **test_metrics},
-    ])
-
-    metrics_df.to_csv(OUTPUT_DIR / "two_stage_metrics.csv", index=False)
-    valid_pred.to_csv(OUTPUT_DIR / "validation_predictions.csv", index=False)
-    test_pred.to_csv(OUTPUT_DIR / "test_predictions.csv", index=False)
-
-    print("\n--- TEST METRICS ---")
-    print(metrics_df[metrics_df["split"] == "test"].T)
-
-    print("\n--- CLASSIFICATION REPORT TEST ---")
-    print(classification_report(test_pred["y_true_label"], test_pred["y_pred_label"]))
-
-    plot_confusion_matrix(test_pred["y_true_label"], test_pred["y_pred_label"])
-    plot_feature_importance(classifier, title="Stage 1 Classifier Feature Importance")
-    plot_feature_importance(regressor, title="Stage 2 Regressor Feature Importance")
-
-    print(f"\n✅ Saved outputs to: {OUTPUT_DIR}")
-
-    return test_metrics
 
 if __name__ == "__main__":
-    train_rainfall_model()
+    main()
