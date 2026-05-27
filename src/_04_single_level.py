@@ -1,4 +1,9 @@
-"""Step 4: Process ERA5 single-level GRIB files to daily parquet."""
+"""Step 4: Process ERA5 single-level GRIB files to daily parquet.
+
+This script processes only instant single-level ERA5 variables.
+ERA5 total precipitation is intentionally excluded because rainfall target
+construction is handled from station data in the downstream pipeline.
+"""
 
 import gc
 import xarray as xr
@@ -15,9 +20,9 @@ GRAVITY = 9.80665
 
 # Base paths
 BASE_DIR = Path(__file__).resolve().parent.parent
-BASE_SINGLE_RAW = BASE_DIR / "data" / "raw" / "single"
-BASE_SINGLE_CLEAN = BASE_DIR / "data" / "clean" / "single_level"
-OUTPUT_SINGLE_FINAL = BASE_DIR / "data" / "clean" / "ERA5_single_level.parquet"
+BASE_SINGLE_RAW = BASE_DIR / "data" / "raw" / "era5_single_level"
+BASE_SINGLE_CLEAN = BASE_DIR / "data" / "processed" / "era5_single_level"
+OUTPUT_SINGLE_FINAL = BASE_DIR / "data" / "processed" / "ERA5_single_level.parquet"
 
 # Columns to drop after processing
 COLS_TO_DROP = ["number", "step", "surface", "valid_time"]
@@ -28,8 +33,7 @@ TEMP_COLS_K_TO_C = ["d2m", "t2m", "sst"]
 # Pressure columns to convert from Pa to hPa
 PRESSURE_COLS_PA_TO_HPA = ["msl", "sp"]
 
-# Aggregation columns for resampling
-# tp is processed separately because it has valid_time/step structure.
+# Aggregation columns for daily resampling
 RESAMPLE_AGG_COLS = {
     "t2m": "mean",
     "d2m": "mean",
@@ -83,64 +87,6 @@ def _convert_geopotential_to_meters(df: pd.DataFrame) -> pd.DataFrame:
         df["z"] = df["z"] / GRAVITY
     return df
 
-def _convert_precipitation_m_to_mm(df: pd.DataFrame) -> pd.DataFrame:
-    if "tp" in df.columns:
-        df["tp"] = df["tp"] * 1000
-    return df
-
-def _extract_total_precipitation(path: str | Path) -> pd.DataFrame:
-    path = Path(path)
-
-    ds = xr.open_dataset(
-        path,
-        engine="cfgrib",
-        backend_kwargs={
-            "filter_by_keys": {"shortName": "tp"},
-            "errors": "ignore",
-        },
-    )
-
-    ds_filter = ds.sel(
-        latitude=slice(*VIETNAM_LAT_SLICE),
-        longitude=slice(*VIETNAM_LON_SLICE),
-    )
-
-    tp = ds_filter.to_dataframe().reset_index()
-
-    if "tp" not in tp.columns:
-        raise ValueError(f"Không tìm thấy biến tp trong file: {path}")
-
-    # valid_time is the real timestamp for precipitation.
-    if "valid_time" in tp.columns:
-        if "time" in tp.columns:
-            tp = tp.rename(columns={"time": "source_time", "valid_time": "time"})
-        else:
-            tp = tp.rename(columns={"valid_time": "time"})
-
-    tp["time"] = pd.to_datetime(tp["time"], errors="coerce")
-    if tp["time"].isna().any():
-        raise ValueError(f"Cột time của tp có giá trị không parse được trong file: {path}")
-
-    tp = _convert_precipitation_m_to_mm(tp)
-
-    # Collapse duplicate valid_time records before daily summation.
-    tp = (
-        tp.groupby(["time", "latitude", "longitude"], as_index=False)["tp"]
-        .max()
-        .sort_values(["time", "latitude", "longitude"])
-        .reset_index(drop=True)
-    )
-
-    tp_daily = (
-        tp.set_index("time")
-        .groupby(["latitude", "longitude"])
-        .resample(RESAMPLE_FREQUENCY)
-        .agg({"tp": "sum"})
-        .reset_index()
-    )
-
-    return tp_daily
-
 def process_single_level(year: str) -> pd.DataFrame:
     _ensure_directories()
 
@@ -152,7 +98,6 @@ def process_single_level(year: str) -> pd.DataFrame:
     if not path.exists():
         raise FileNotFoundError(f"Không tìm thấy GRIB file: {path}")
 
-    # Load non-precipitation instant variables.
     ds = xr.open_dataset(
         path,
         engine="cfgrib",
@@ -189,23 +134,12 @@ def process_single_level(year: str) -> pd.DataFrame:
     if not available_agg_cols:
         raise ValueError(f"Không có biến single-level nào để resample trong file: {path}")
 
-    base_daily = (
+    df_daily = (
         df.set_index("time")
         .groupby(["latitude", "longitude"])
         .resample(RESAMPLE_FREQUENCY)
         .agg(available_agg_cols)
         .reset_index()
-    )
-
-    # Extract and aggregate precipitation separately.
-    tp_daily = _extract_total_precipitation(path)
-
-    # Merge daily base variables and daily precipitation.
-    df_daily = pd.merge(
-        base_daily,
-        tp_daily,
-        on=["time", "latitude", "longitude"],
-        how="outer",
     )
 
     df_daily = (
@@ -222,7 +156,7 @@ def process_single_level(year: str) -> pd.DataFrame:
     print(f"--- Đã lưu dữ liệu Single Level sạch tại: {output_path}")
     print(f"--- Kích thước: {df_daily.shape}")
 
-    del ds, ds_filter, df, base_daily, tp_daily
+    del ds, ds_filter, df
     gc.collect()
 
     return df_daily

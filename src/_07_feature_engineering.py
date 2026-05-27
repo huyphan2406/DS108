@@ -1,4 +1,4 @@
-"""Step 7: Create meteorological features and two-stage rainfall targets."""
+"""Step 7: Create meteorological features and rainfall occurrence label."""
 
 import numpy as np
 import pandas as pd
@@ -11,10 +11,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 PRESSURE_LEVELS = [500, 850]
 WINDOW_SIZE = 3
-PRECIPITATION_THRESHOLD = 0.1
+RAIN_LABEL_THRESHOLD_MM = 1.0
 
-INPUT_PATH = BASE_DIR / "data" / "clean" / "silver_data.csv"
-OUTPUT_PATH = BASE_DIR / "data" / "feature_engineering" / "feature_engineered_data.csv"
+TARGET_1STAGE = "target_1stage_prcp_mm"
+TARGET_STAGE1 = "target_stage1_rain_label"
+TARGET_STAGE2 = "target_stage2_prcp_log1p"
+
+INPUT_PATH = BASE_DIR / "data" / "processed" / "silver" / "silver_data.csv"
+OUTPUT_PATH = BASE_DIR / "data" / "features" / "feature_engineered_data.csv"
 
 LAG_FEATURES = [
     "PRCP",
@@ -100,7 +104,7 @@ def create_thermodynamic_features(df: pd.DataFrame) -> pd.DataFrame:
     group_cols = _get_groupby_cols(df)
     df = df.sort_values(group_cols + ["time"]).reset_index(drop=True)
 
-    # Moist convection at multiple pressure levels
+    # Moist convection at multiple era5_pressure_level levels
     for lvl in PRESSURE_LEVELS:
         q_col = f"q_{lvl}"
         w_col = f"w_{lvl}"
@@ -235,20 +239,42 @@ def create_rolling_statistics(
 
 # 7. TARGET ENCODING
 
-def prepare_target(df: pd.DataFrame, threshold: float = None) -> pd.DataFrame:
-    if threshold is None:
-        threshold = PRECIPITATION_THRESHOLD
+def prepare_target(df: pd.DataFrame) -> pd.DataFrame:
+    # Fix lại phần này (bù missing cho PRCP)
+    # if "PRCP" not in df.columns:
+    #     raise KeyError("Không tìm thấy cột PRCP để tạo target.")
+    #
+    # df["PRCP"] = pd.to_numeric(df["PRCP"], errors="coerce")
+    #
+    # if df["PRCP"].isna().any():
+    #     n_missing = int(df["PRCP"].isna().sum())
+    #     raise ValueError(
+    #         f"PRCP còn {n_missing} giá trị missing. "
+    #         "Không được fill hoặc nội suy biến target."
+    #     )
+    #
+    # if not np.isfinite(df["PRCP"].to_numpy()).all():
+    #     raise ValueError("PRCP chứa giá trị inf/-inf, cần kiểm tra lại dữ liệu.")
+    #
+    # if (df["PRCP"] < 0).any():
+    #     n_negative = int((df["PRCP"] < 0).sum())
+    #     raise ValueError(f"PRCP có {n_negative} giá trị âm, cần kiểm tra lại dữ liệu.")
 
-    if "PRCP" not in df.columns:
-        raise KeyError("Không tìm thấy cột PRCP để tạo target.")
 
-    df["PRCP"] = pd.to_numeric(df["PRCP"], errors="coerce").fillna(0)
-    df["PRCP"] = df["PRCP"].clip(lower=0)
+    # Tạo target label
+    # Dataset-level rainfall occurrence label.
+    df["PRCP_label"] = (df["PRCP"] >= RAIN_LABEL_THRESHOLD_MM).astype("int8")
 
-    df["PRCP_label"] = (df["PRCP"] > threshold).astype(int)
-    df["PRCP_log1p"] = np.log1p(df["PRCP"])
+    # Scenario-specific targets.
+    # Scenario 1 uses Tweedie objective in the model script, while the target remains PRCP in mm.
+    df[TARGET_1STAGE] = df["PRCP"].astype(float)
+
+    # Scenario 2 consists of rain occurrence classification and positive rainfall amount regression.
+    df[TARGET_STAGE1] = df["PRCP_label"].astype("int8")
+    df[TARGET_STAGE2] = np.log1p(df["PRCP"].astype(float))
 
     return df
+
 
 # MAIN PIPELINE
 
@@ -308,7 +334,7 @@ def feature_engineering(
     df = create_lag_features(df)
     df = create_rolling_statistics(df)
 
-    print("🎯 Preparing target variables...")
+    print("🎯 Preparing rainfall targets...")
     df = prepare_target(df)
 
     df = _drop_temporal_nans(df)
@@ -322,7 +348,7 @@ def feature_engineering(
     df.to_csv(output_path, index=False)
 
     print(f"✨ Feature engineering complete! Shape: {df.shape}")
-    print("Targets created: PRCP, PRCP_label, PRCP_log1p")
+    print("Target columns created: PRCP_label, target_1stage_prcp_mm, target_stage1_rain_label, target_stage2_prcp_log1p")
 
 if __name__ == "__main__":
     feature_engineering()

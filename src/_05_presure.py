@@ -1,4 +1,4 @@
-"""Step 5: Process ERA5 pressure-level GRIB files to daily parquet."""
+"""Step 5: Process ERA5 era5_pressure_level-level GRIB files to daily parquet."""
 
 import xarray as xr
 import pandas as pd
@@ -17,9 +17,9 @@ GRAVITY = 9.80665
 
 # Base paths
 BASE_DIR = Path(__file__).resolve().parent.parent
-BASE_PRESSURE_RAW = BASE_DIR / "data" / "raw" / "pressure"
-BASE_PRESSURE_CLEAN = BASE_DIR / "data" / "clean" / "pressure"
-OUTPUT_PRESSURE_FINAL = BASE_DIR / "data" / "clean" / "ERA5_pressure_final.parquet"
+BASE_PRESSURE_RAW = BASE_DIR / "data" / "raw" / "era5_pressure_level"
+BASE_PRESSURE_CLEAN = BASE_DIR / "data" / "processed" / "era5_pressure_level"
+OUTPUT_PRESSURE_FINAL = BASE_DIR / "data" / "processed" / "ERA5_pressure_final.parquet"
 
 # Aggregation columns for resampling
 RESAMPLE_AGG_COLS = {
@@ -88,7 +88,7 @@ def merge_pressure_levels(grib_path: str | Path) -> pd.DataFrame:
     )
 
     if LEVEL_NAME not in ds.coords and LEVEL_NAME not in ds.dims:
-        raise KeyError(f"Không tìm thấy pressure-level coordinate: {LEVEL_NAME}")
+        raise KeyError(f"Không tìm thấy era5_pressure_level-level coordinate: {LEVEL_NAME}")
 
     available_levels = set(pd.Series(ds[LEVEL_NAME].values).astype(int).tolist())
     missing_levels = [lvl for lvl in PRESSURE_LEVELS if lvl not in available_levels]
@@ -105,7 +105,7 @@ def merge_pressure_levels(grib_path: str | Path) -> pd.DataFrame:
         longitude=slice(*VIETNAM_LON_SLICE),
     )
 
-    # Extract pressure levels
+    # Extract era5_pressure_level levels
     print("--- Trích xuất tầng 500 hPa và 850 hPa...")
     ds_500 = _extract_pressure_levels(ds, 500)
     ds_850 = _extract_pressure_levels(ds, 850)
@@ -117,7 +117,7 @@ def merge_pressure_levels(grib_path: str | Path) -> pd.DataFrame:
     df_500 = _downsample_to_float32(df_500)
     df_850 = _downsample_to_float32(df_850)
 
-    # Merge pressure levels horizontally
+    # Merge era5_pressure_level levels horizontally
     print("--- Đang gộp dữ liệu tầng áp suất...")
 
     merge_keys = _get_common_merge_keys(df_500, df_850)
@@ -148,7 +148,7 @@ def merge_pressure_levels(grib_path: str | Path) -> pd.DataFrame:
     }
 
     if not available_agg_cols:
-        raise ValueError(f"Không có biến pressure-level nào để resample trong file: {grib_path}")
+        raise ValueError(f"Không có biến era5_pressure_level-level nào để resample trong file: {grib_path}")
 
     df_final = (
         df_final.set_index("time")

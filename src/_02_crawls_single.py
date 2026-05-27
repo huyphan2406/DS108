@@ -1,4 +1,4 @@
-"""Step 2: Download ERA5 single-level GRIB files by year."""
+"""Step 2: Download ERA5 era5_single_level-level GRIB files by year."""
 
 import cdsapi
 from pathlib import Path
@@ -8,9 +8,9 @@ import time
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-DATASET = "reanalysis-era5-single-levels"
+DATASET = "reanalysis-era5-era5_single_level-levels"
 
-OUTPUT_BASE_DIR = BASE_DIR / "data" / "raw" / "single"
+OUTPUT_BASE_DIR = BASE_DIR / "data" / "raw" / "era5_single_level"
 
 YEARS = range(2015, 2025)
 
@@ -70,7 +70,7 @@ def download_single_level_year(client: cdsapi.Client, year: int) -> None:
 
     request = build_request(year)
 
-    print(f"\n⬇️ Đang tải ERA5 single-level năm {year}...")
+    print(f"\n⬇️ Đang tải ERA5 era5_single_level-level năm {year}...")
     print(f"Output: {output_path}")
 
     try:
@@ -82,7 +82,7 @@ def download_single_level_year(client: cdsapi.Client, year: int) -> None:
             print(f"⚠️ {year}: File tải về rỗng hoặc không tồn tại, cần kiểm tra lại.")
 
     except Exception as e:
-        print(f"❌ {year}: Lỗi khi tải ERA5 single-level: {e}")
+        print(f"❌ {year}: Lỗi khi tải ERA5 era5_single_level-level: {e}")
 
 def crawl_single_level() -> None:
     print("=== START ERA5 SINGLE-LEVEL CRAWLING ===")
@@ -97,7 +97,7 @@ def crawl_single_level() -> None:
         download_single_level_year(client, year)
         time.sleep(1)
 
-    print("\n✅ ERA5 single-level crawling completed.")
+    print("\n✅ ERA5 era5_single_level-level crawling completed.")
 
 if __name__ == "__main__":
     crawl_single_level()

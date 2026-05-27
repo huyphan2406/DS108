@@ -82,12 +82,39 @@ DROP_FEATURE_COLUMNS = [
 ]
 
 
+# Selected features used after feature selection.
+# Edit this list only when the feature-selection result changes.
+SELECTED_FEATURES = [
+    "TEMP",
+    "DEWP",
+    "SLP",
+    "WDSP",
+    "VISIB",
+    "u_850",
+    "v_850",
+    "q_850",
+    "t_850",
+    "z_500",
+    "z_850",
+    "dew_point_depression",
+    "moisture_flux_850",
+    "PRCP_lag_1",
+    "PRCP_lag_2",
+    "PRCP_past_3d_mean",
+    "PRCP_past_3d_sum",
+    "day_sin",
+    "day_cos",
+    "month_sin",
+    "month_cos",
+]
+
+
 # =============================================================================
 # CLI
 # =============================================================================
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Validate rainfall benchmark using 1-stage Tweedie and 2-stage expected LightGBM."
+        description="Validate rainfall benchmark using selected features with 1-stage Tweedie and 2-stage expected LightGBM."
     )
     parser.add_argument("--input-csv", type=str, default=str(DEFAULT_INPUT_CSV))
     parser.add_argument("--random-state", type=int, default=42)
@@ -174,19 +201,35 @@ def time_split(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFra
 
 
 def select_feature_columns(df: pd.DataFrame) -> List[str]:
-    feature_cols = [
+    all_numeric_features = [
         col for col in df.columns
         if col not in DROP_FEATURE_COLUMNS and pd.api.types.is_numeric_dtype(df[col])
     ]
 
-    if not feature_cols:
-        raise ValueError("No numeric feature columns found after leakage columns are removed.")
+    selected_existing = [
+        col for col in SELECTED_FEATURES
+        if col in all_numeric_features
+    ]
 
-    leakage_cols = sorted(set(feature_cols) & set(DROP_FEATURE_COLUMNS))
+    missing_features = sorted(set(SELECTED_FEATURES) - set(df.columns))
+    if missing_features:
+        print(f"[WARNING] Selected features not found and skipped: {missing_features}")
+
+    non_numeric_features = sorted(
+        col for col in SELECTED_FEATURES
+        if col in df.columns and not pd.api.types.is_numeric_dtype(df[col])
+    )
+    if non_numeric_features:
+        print(f"[WARNING] Selected features are non-numeric and skipped: {non_numeric_features}")
+
+    if not selected_existing:
+        raise ValueError("No selected numeric feature columns found after leakage columns are removed.")
+
+    leakage_cols = sorted(set(selected_existing) & set(DROP_FEATURE_COLUMNS))
     if leakage_cols:
-        raise AssertionError(f"Leakage columns remain in features: {leakage_cols}")
+        raise AssertionError(f"Leakage columns remain in selected features: {leakage_cols}")
 
-    return feature_cols
+    return selected_existing
 
 
 def make_x(df: pd.DataFrame, feature_cols: Iterable[str]) -> pd.DataFrame:
@@ -433,7 +476,7 @@ def main() -> None:
     print(f"Train: {train_df['time'].min().date()} -> {train_df['time'].max().date()} | n={len(train_df):,}")
     print(f"Valid: {valid_df['time'].min().date()} -> {valid_df['time'].max().date()} | n={len(valid_df):,}")
     print(f"Test : {test_df['time'].min().date()} -> {test_df['time'].max().date()} | n={len(test_df):,}")
-    print(f"Features: {len(feature_cols)} numeric columns")
+    print(f"Selected features: {len(feature_cols)} numeric columns")
 
     print("\n[1/2] Training LightGBM_1stage_Tweedie with validation early stopping...")
     one_stage = train_one_stage_tweedie(train_df, valid_df, feature_cols, args)

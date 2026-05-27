@@ -1,4 +1,4 @@
-"""Step 3: Download ERA5 pressure-level GRIB files by year."""
+"""Step 3: Download ERA5 era5_pressure_level-level GRIB files by year."""
 
 import cdsapi
 from pathlib import Path
@@ -8,8 +8,8 @@ import time
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-DATASET = "reanalysis-era5-pressure-levels"
-OUTPUT_BASE_DIR = BASE_DIR / "data" / "raw" / "pressure"
+DATASET = "reanalysis-era5-era5_pressure_level-levels"
+OUTPUT_BASE_DIR = BASE_DIR / "data" / "raw" / "era5_pressure_level"
 
 YEARS = range(2015, 2025)
 
@@ -69,7 +69,7 @@ def download_pressure_year(client: cdsapi.Client, year: int) -> None:
 
     request = build_request(year)
 
-    print(f"\n⬇️ Đang tải ERA5 pressure-level năm {year}...")
+    print(f"\n⬇️ Đang tải ERA5 era5_pressure_level-level năm {year}...")
     print(f"Output: {output_path}")
 
     try:
@@ -81,7 +81,7 @@ def download_pressure_year(client: cdsapi.Client, year: int) -> None:
             print(f"⚠️ {year}: File tải về rỗng hoặc không tồn tại, cần kiểm tra lại.")
 
     except Exception as e:
-        print(f"❌ {year}: Lỗi khi tải ERA5 pressure-level: {e}")
+        print(f"❌ {year}: Lỗi khi tải ERA5 era5_pressure_level-level: {e}")
 
 def crawl_pressure() -> None:
     print("=== START ERA5 PRESSURE-LEVEL CRAWLING ===")
@@ -97,7 +97,7 @@ def crawl_pressure() -> None:
         download_pressure_year(client, year)
         time.sleep(1)
 
-    print("\n✅ ERA5 pressure-level crawling completed.")
+    print("\n✅ ERA5 era5_pressure_level-level crawling completed.")
 
 if __name__ == "__main__":
     crawl_pressure()
