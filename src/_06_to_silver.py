@@ -193,6 +193,43 @@ def _forward_fill_stationary(df: pd.DataFrame, cols: list[str] | None = None) ->
             df[col] = df.groupby(group_keys)[col].transform(lambda x: x.ffill().bfill())
     return df
 
+def _fill_visibility(df: pd.DataFrame) -> pd.DataFrame:
+    if "VISIB" not in df.columns:
+        return df
+
+    group_keys = _station_group_keys(df)
+
+    df = df.sort_values(group_keys + ["time"]).reset_index(drop=True)
+    df["VISIB"] = pd.to_numeric(df["VISIB"], errors="coerce")
+    df["_month"] = pd.to_datetime(df["time"], errors="coerce").dt.month
+
+    # 1. Linear interpolation for short internal gaps only
+    df["VISIB"] = df.groupby(group_keys)["VISIB"].transform(
+        lambda x: x.interpolate(
+            method="linear",
+            limit=2,
+            limit_area="inside"
+        )
+    )
+
+    # 2. Station-month median fallback
+    df["VISIB"] = df["VISIB"].fillna(
+        df.groupby(group_keys + ["_month"])["VISIB"].transform("median")
+    )
+
+    # 3. Station median fallback
+    df["VISIB"] = df["VISIB"].fillna(
+        df.groupby(group_keys)["VISIB"].transform("median")
+    )
+
+    # 4. Global median fallback
+    global_median = df["VISIB"].median()
+    if pd.isna(global_median):
+        raise ValueError("VISIB is entirely missing; cannot impute visibility values.")
+
+    df["VISIB"] = df["VISIB"].fillna(global_median)
+
+    return df.drop(columns=["_month"], errors="ignore")
 
 def _interpolate_missing_values(df: pd.DataFrame) -> pd.DataFrame:
     if "t2m" in df.columns and "TEMP" in df.columns:
@@ -208,11 +245,7 @@ def _interpolate_missing_values(df: pd.DataFrame) -> pd.DataFrame:
         df["STP"] = df["STP"].fillna(df["sp"])
 
     # Riêng biến VISIB thì được nội suy tuyến tính do đặc trưng nào tương tự để thay vào
-    if "VISIB" in df.columns:
-        group_keys = _station_group_keys(df)
-        df["VISIB"] = df.groupby(group_keys)["VISIB"].transform(
-            lambda x: x.interpolate(method="linear", limit_direction="both")
-        )
+    df = _fill_visibility(df)
 
     # Còn biến WDSP thì được xử lý missing bằng công thức
     if {"WDSP", "u10", "v10"}.issubset(df.columns):
