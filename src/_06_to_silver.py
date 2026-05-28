@@ -203,7 +203,7 @@ def _fill_visibility(df: pd.DataFrame) -> pd.DataFrame:
     df["VISIB"] = pd.to_numeric(df["VISIB"], errors="coerce")
     df["_month"] = pd.to_datetime(df["time"], errors="coerce").dt.month
 
-    # 1. Linear interpolation for short internal gaps only
+    # 1. Nội suy tuyến tính cho 1 khoảng thời gian ngắn(2 ngày)
     df["VISIB"] = df.groupby(group_keys)["VISIB"].transform(
         lambda x: x.interpolate(
             method="linear",
