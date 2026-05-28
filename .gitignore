@@ -1,0 +1,11 @@
+# Chặn toàn bộ thư mục chứa data
+data/
+*.csv
+*.parquet
+*.nc
+*.grib
+
+# Chặn file môi trường hoặc cấu hình cá nhân
+.env
+__pycache__/
+.ipynb_checkpoints/

@@ -74,10 +74,10 @@ Chạy các script từ thư mục gốc project.
 
 ```bash
 python src/_01_crawler.py
-python src/_02_crawls_single.py
-python src/_03_crawls_pressure.py
+python src/_02_crawls_single_level.py
+python src/_03_crawls_pressure_level.py
 python src/_04_single_level.py
-python src/_05_presure.py
+python src/_05_presure_level.py
 python src/_06_to_silver.py
 python src/_07_feature_engineering.py
 python src/_08_model.py
