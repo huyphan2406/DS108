@@ -63,24 +63,6 @@ def _safe_numeric(df: pd.DataFrame, cols: List[str]) -> pd.DataFrame:
             df[col] = pd.to_numeric(df[col], errors="coerce")
     return df
 
-def _drop_temporal_nans(df: pd.DataFrame) -> pd.DataFrame:
-    temporal_cols = [
-        col for col in df.columns
-        if "_lag_" in col
-        or "_past_" in col
-        or col in ["du_dt_850", "dv_dt_850", "ageostrophic_signal"]
-    ]
-
-    temporal_cols = [col for col in temporal_cols if col in df.columns]
-
-    if temporal_cols:
-        before = len(df)
-        df = df.dropna(subset=temporal_cols).reset_index(drop=True)
-        after = len(df)
-        print(f"🧹 Dropped {before - after} rows with temporal NaNs from lag/diff features.")
-
-    return df
-
 # 1. TEMPORAL FEATURES
 
 def create_temporal_features(df: pd.DataFrame) -> pd.DataFrame:
@@ -240,26 +222,20 @@ def create_rolling_statistics(
 # 7. TARGET ENCODING
 
 def prepare_target(df: pd.DataFrame) -> pd.DataFrame:
-    # Fix lại phần này (bù missing cho PRCP)
-    # if "PRCP" not in df.columns:
-    #     raise KeyError("Không tìm thấy cột PRCP để tạo target.")
-    #
-    # df["PRCP"] = pd.to_numeric(df["PRCP"], errors="coerce")
-    #
-    # if df["PRCP"].isna().any():
-    #     n_missing = int(df["PRCP"].isna().sum())
-    #     raise ValueError(
-    #         f"PRCP còn {n_missing} giá trị missing. "
-    #         "Không được fill hoặc nội suy biến target."
-    #     )
-    #
-    # if not np.isfinite(df["PRCP"].to_numpy()).all():
-    #     raise ValueError("PRCP chứa giá trị inf/-inf, cần kiểm tra lại dữ liệu.")
-    #
-    # if (df["PRCP"] < 0).any():
-    #     n_negative = int((df["PRCP"] < 0).sum())
-    #     raise ValueError(f"PRCP có {n_negative} giá trị âm, cần kiểm tra lại dữ liệu.")
+    # Check target
+    if "PRCP" not in df.columns:
+        raise KeyError("Không tìm thấy cột PRCP để tạo target.")
 
+    df["PRCP"] = pd.to_numeric(df["PRCP"], errors="coerce")
+
+    if df["PRCP"].isna().any():
+        raise ValueError("PRCP vẫn còn missing sau bước silver. Hãy kiểm tra lại _06_to_silver.py.")
+
+    if not np.isfinite(df["PRCP"].to_numpy(dtype=float)).all():
+        raise ValueError("PRCP chứa inf/-inf.")
+
+    if (df["PRCP"] < 0).any():
+        raise ValueError("PRCP chứa giá trị âm.")
 
     # Tạo target label
     # Dataset-level rainfall occurrence label.
@@ -274,7 +250,6 @@ def prepare_target(df: pd.DataFrame) -> pd.DataFrame:
     df[TARGET_STAGE2] = np.log1p(df["PRCP"].astype(float))
 
     return df
-
 
 # MAIN PIPELINE
 
@@ -336,8 +311,6 @@ def feature_engineering(
 
     print("🎯 Preparing rainfall targets...")
     df = prepare_target(df)
-
-    df = _drop_temporal_nans(df)
 
     sort_cols = ["STATION", "time"] if "STATION" in df.columns else ["time"]
     df = df.sort_values(sort_cols).reset_index(drop=True)

@@ -193,6 +193,38 @@ def _forward_fill_stationary(df: pd.DataFrame, cols: list[str] | None = None) ->
             df[col] = df.groupby(group_keys)[col].transform(lambda x: x.ffill().bfill())
     return df
 
+def _fill_prcp_by_station_year_mean(df: pd.DataFrame) -> pd.DataFrame:
+    if "PRCP" not in df.columns:
+        return df
+
+    group_keys = _station_group_keys(df)
+
+    df = df.copy()
+    df["PRCP"] = pd.to_numeric(df["PRCP"], errors="coerce")
+    df["_year"] = pd.to_datetime(df["time"], errors="coerce").dt.year
+
+    # 1. Station-year mean
+    df["PRCP"] = df["PRCP"].fillna(
+        df.groupby(group_keys + ["_year"])["PRCP"].transform("mean")
+    )
+
+    # 2. Station mean fallback nếu cả station-year đó đều thiếu PRCP
+    df["PRCP"] = df["PRCP"].fillna(
+        df.groupby(group_keys)["PRCP"].transform("mean")
+    )
+
+    # 3. Global mean fallback nếu vẫn còn thiếu
+    global_mean = df["PRCP"].mean()
+    if pd.isna(global_mean):
+        raise ValueError("PRCP is entirely missing; cannot impute rainfall target.")
+
+    df["PRCP"] = df["PRCP"].fillna(global_mean)
+
+    # 4. Bảo đảm PRCP không âm
+    df["PRCP"] = df["PRCP"].clip(lower=0)
+
+    return df.drop(columns=["_year"], errors="ignore")
+
 def _fill_visibility(df: pd.DataFrame) -> pd.DataFrame:
     if "VISIB" not in df.columns:
         return df
@@ -203,7 +235,7 @@ def _fill_visibility(df: pd.DataFrame) -> pd.DataFrame:
     df["VISIB"] = pd.to_numeric(df["VISIB"], errors="coerce")
     df["_month"] = pd.to_datetime(df["time"], errors="coerce").dt.month
 
-    # 1. Nội suy tuyến tính cho 1 khoảng thời gian ngắn(2 ngày)
+    # 1. Nội suy tuyến tính cho 1 khoảng thời (limit=2)
     df["VISIB"] = df.groupby(group_keys)["VISIB"].transform(
         lambda x: x.interpolate(
             method="linear",
@@ -244,15 +276,18 @@ def _interpolate_missing_values(df: pd.DataFrame) -> pd.DataFrame:
     if "sp" in df.columns and "STP" in df.columns:
         df["STP"] = df["STP"].fillna(df["sp"])
 
-    # Riêng biến VISIB thì được nội suy tuyến tính do đặc trưng nào tương tự để thay vào
-    df = _fill_visibility(df)
-
     # Còn biến WDSP thì được xử lý missing bằng công thức
     if {"WDSP", "u10", "v10"}.issubset(df.columns):
         u10 = pd.to_numeric(df["u10"], errors="coerce")
         v10 = pd.to_numeric(df["v10"], errors="coerce")
         era5_wind_speed = np.sqrt(u10 ** 2 + v10 ** 2)
         df["WDSP"] = pd.to_numeric(df["WDSP"], errors="coerce").fillna(era5_wind_speed)
+
+    # Riêng biến VISIB thì được nội suy tuyến tính do đặc trưng nào tương tự để thay vào
+    df = _fill_visibility(df)
+
+    # Fill target prcp
+    df = _fill_prcp_by_station_year_mean(df)
 
     return df
 
