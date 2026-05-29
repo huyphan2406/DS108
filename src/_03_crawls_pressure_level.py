@@ -8,7 +8,7 @@ import time
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-DATASET = "reanalysis-era5-era5_pressure_level-levels"
+DATASET = "reanalysis-era5-pressure-levels"
 OUTPUT_BASE_DIR = BASE_DIR / "data" / "raw" / "era5_pressure_level"
 
 YEARS = range(2015, 2025)

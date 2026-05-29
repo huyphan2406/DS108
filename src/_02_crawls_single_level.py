@@ -8,7 +8,7 @@ import time
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-DATASET = "reanalysis-era5-era5_single_level-levels"
+DATASET = "reanalysis-era5-single-levels"
 
 OUTPUT_BASE_DIR = BASE_DIR / "data" / "raw" / "era5_single_level"
 
