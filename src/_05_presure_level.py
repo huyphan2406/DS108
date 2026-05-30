@@ -19,7 +19,8 @@ GRAVITY = 9.80665
 BASE_DIR = Path(__file__).resolve().parent.parent
 BASE_PRESSURE_RAW = BASE_DIR / "data" / "raw" / "era5_pressure_level"
 BASE_PRESSURE_CLEAN = BASE_DIR / "data" / "processed" / "era5_pressure_level"
-OUTPUT_PRESSURE_FINAL = BASE_DIR / "data" / "processed" / "ERA5_pressure_final.parquet"
+FOLDER_OUTPUT = BASE_DIR / "data" / "processed" / "components"
+OUTPUT_PRESSURE_FINAL = BASE_DIR / "data" / "processed" / "components" / "ERA5_pressure_final.parquet"
 
 # Aggregation columns for resampling
 RESAMPLE_AGG_COLS = {
@@ -41,6 +42,7 @@ RESAMPLE_AGG_COLS = {
 
 def _ensure_directories() -> None:
     BASE_PRESSURE_CLEAN.mkdir(parents=True, exist_ok=True)
+    FOLDER_OUTPUT.mkdir(parents=True, exist_ok=True)
     OUTPUT_PRESSURE_FINAL.parent.mkdir(parents=True, exist_ok=True)
 
 def _extract_pressure_levels(ds: xr.Dataset, level: int) -> xr.Dataset:

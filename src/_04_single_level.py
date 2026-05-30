@@ -22,7 +22,8 @@ GRAVITY = 9.80665
 BASE_DIR = Path(__file__).resolve().parent.parent
 BASE_SINGLE_RAW = BASE_DIR / "data" / "raw" / "era5_single_level"
 BASE_SINGLE_CLEAN = BASE_DIR / "data" / "processed" / "era5_single_level"
-OUTPUT_SINGLE_FINAL = BASE_DIR / "data" / "processed" / "ERA5_single_level.parquet"
+FOLDER_OUTPUT = BASE_DIR / "data" / "processed" / "components"
+OUTPUT_SINGLE_FINAL = BASE_DIR / "data" / "processed" / "components" / "ERA5_single_level.parquet"
 
 # Columns to drop after processing
 COLS_TO_DROP = ["number", "step", "surface", "valid_time"]
@@ -50,6 +51,7 @@ RESAMPLE_AGG_COLS = {
 
 def _ensure_directories() -> None:
     BASE_SINGLE_CLEAN.mkdir(parents=True, exist_ok=True)
+    FOLDER_OUTPUT.mkdir(parents=True, exist_ok=True)
     OUTPUT_SINGLE_FINAL.parent.mkdir(parents=True, exist_ok=True)
 
 def _drop_identifier_columns(df: pd.DataFrame, cols: List[str] = None) -> pd.DataFrame:
