@@ -196,6 +196,49 @@ def _forward_fill_stationary(df: pd.DataFrame, cols: list[str] | None = None) ->
             df[col] = df.groupby(group_keys)[col].transform(lambda x: x.ffill().bfill())
     return df
 
+def _impute_visib(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Impute VISIB theo hướng hierarchical:
+    1. Forward-fill ngắn hạn theo từng trạm, tối đa 2 ngày.
+    2. Fill phần còn thiếu bằng median theo STATION + month.
+    3. Nếu vẫn thiếu, fill bằng median theo STATION.
+    4. Nếu vẫn thiếu, fill bằng median toàn bộ dataset.
+
+    Lưu ý:
+    - VISIB là feature đầu vào, không phải target.
+    - Không dùng PRCP để impute VISIB để tránh leakage từ target.
+    """
+
+    if "VISIB" not in df.columns:
+        return df
+
+    group_keys = _station_group_keys(df)
+
+    df = df.sort_values(group_keys + ["time"]).reset_index(drop=True)
+    df["VISIB"] = pd.to_numeric(df["VISIB"], errors="coerce")
+
+    # 1. Fill gap ngắn hạn theo từng trạm
+    df["VISIB"] = df.groupby(group_keys)["VISIB"].transform(
+        lambda x: x.ffill(limit=2)
+    )
+
+    # 2. Fill gap dài bằng median theo trạm + tháng
+    df["_month"] = pd.to_datetime(df["time"], errors="coerce").dt.month
+
+    station_month_median = df.groupby(group_keys + ["_month"])["VISIB"].transform("median")
+    df["VISIB"] = df["VISIB"].fillna(station_month_median)
+
+    # 3. Fallback bằng median theo trạm
+    station_median = df.groupby(group_keys)["VISIB"].transform("median")
+    df["VISIB"] = df["VISIB"].fillna(station_median)
+
+    # 4. Fallback cuối cùng bằng median toàn bộ
+    global_median = df["VISIB"].median()
+    df["VISIB"] = df["VISIB"].fillna(global_median)
+
+    df = df.drop(columns=["_month"], errors="ignore")
+
+    return df
 
 def _interpolate_missing_values(df: pd.DataFrame) -> pd.DataFrame:
     if "t2m" in df.columns and "TEMP" in df.columns:
@@ -210,19 +253,15 @@ def _interpolate_missing_values(df: pd.DataFrame) -> pd.DataFrame:
     if "sp" in df.columns and "STP" in df.columns:
         df["STP"] = df["STP"].fillna(df["sp"])
 
+    # Fill bằng công thức
     if {"WDSP", "u10", "v10"}.issubset(df.columns):
         u10 = pd.to_numeric(df["u10"], errors="coerce")
         v10 = pd.to_numeric(df["v10"], errors="coerce")
         era5_wind_speed = np.sqrt(u10 ** 2 + v10 ** 2)
         df["WDSP"] = pd.to_numeric(df["WDSP"], errors="coerce").fillna(era5_wind_speed)
 
-    group_keys = _station_group_keys(df)
-    if "VISIB" in df.columns:
-        df = df.sort_values(group_keys + ["time"]).reset_index(drop=True)
-        df["VISIB"] = pd.to_numeric(df["VISIB"], errors="coerce")
-        df["VISIB"] = df.groupby(group_keys)["VISIB"].transform(
-            lambda x: x.ffill(limit=2)
-        )
+    # Sử dụng phương pháp nội suy
+    df = _impute_visib(df)
 
     return df
 
@@ -413,10 +452,6 @@ def silver_data_pipeline() -> None:
 
     print(f"✅ Data saved to {OUTPUT_SILVER_PATH}")
     print(f"Shape: {df.shape}")
-
-    if {"STATION", "time"}.issubset(df.columns):
-        print(f"Duplicate STATION-time: {df.duplicated(subset=['STATION', 'time']).sum()}")
-
 
 if __name__ == "__main__":
     silver_data_pipeline()

@@ -11,7 +11,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 PRESSURE_LEVELS = [500, 850]
 WINDOW_SIZE = 3
-RAIN_LABEL_THRESHOLD_MM = 1.0
+RAIN_LABEL_THRESHOLD_MM = 0.1
 
 TARGET_1STAGE = "target_1stage_prcp_mm"
 TARGET_STAGE1 = "target_stage1_rain_label"
@@ -65,6 +65,50 @@ def _safe_numeric(df: pd.DataFrame, cols: List[str]) -> pd.DataFrame:
             df[col] = pd.to_numeric(df[col], errors="coerce")
     return df
 
+def _build_prcp_past_fill(df: pd.DataFrame, group_cols: List[str]) -> pd.Series:
+    """
+    Tạo past_fill cho PRCP_impute nhưng không dùng tương lai.
+
+    Thứ tự ưu tiên:
+    1. ffill tối đa 2 ngày theo từng trạm
+    2. median lịch sử theo trạm + tháng
+    3. median lịch sử theo trạm
+    4. nếu vẫn thiếu thì dùng 0.0
+
+    Lưu ý:
+    - Chỉ dùng để tạo PRCP_impute.
+    - Không thay thế PRCP thật.
+    - Không dùng bfill để tránh leakage từ tương lai.
+    """
+    df = df.copy()
+    df["PRCP"] = pd.to_numeric(df["PRCP"], errors="coerce")
+    df["time"] = pd.to_datetime(df["time"], errors="coerce")
+    df["_month"] = df["time"].dt.month
+
+    # 1. Fill ngắn hạn bằng giá trị quá khứ gần nhất, tối đa 2 ngày
+    past_fill = df.groupby(group_cols)["PRCP"].ffill(limit=2)
+
+    # 2. Median lịch sử theo trạm + tháng, chỉ dùng dữ liệu trước dòng hiện tại
+    station_month_median = (
+        df.groupby(group_cols + ["_month"])["PRCP"]
+        .transform(lambda x: x.shift(1).expanding(min_periods=1).median())
+    )
+
+    past_fill = past_fill.fillna(station_month_median)
+
+    # 3. Median lịch sử theo trạm, chỉ dùng dữ liệu trước dòng hiện tại
+    station_median = (
+        df.groupby(group_cols)["PRCP"]
+        .transform(lambda x: x.shift(1).expanding(min_periods=1).median())
+    )
+
+    past_fill = past_fill.fillna(station_median)
+
+    # 4. Fallback cuối cùng: 0.0
+    past_fill = past_fill.fillna(0.0)
+
+    return past_fill
+
 def create_prcp_proxy(df: pd.DataFrame) -> pd.DataFrame:
     """
     PRCP gốc là target thật, không fill.
@@ -79,9 +123,7 @@ def create_prcp_proxy(df: pd.DataFrame) -> pd.DataFrame:
 
     df["PRCP"] = pd.to_numeric(df["PRCP"], errors="coerce")
 
-    # Chỉ lấy giá trị mưa gần nhất tối đa 2 ngày trước đó.
-    # Không fill trực tiếp vào PRCP thật, chỉ tạo proxy cho lag/rolling.
-    past_fill = df.groupby(group_cols)["PRCP"].ffill(limit=2)
+    past_fill = _build_prcp_past_fill(df, group_cols)
 
     df[PRCP_PROXY_COL] = np.where(
         df["PRCP"].isna(),
