@@ -1,12 +1,17 @@
 """
-DS108 - LightGBM 2x2 model validation
-======================================
+DS108 - LightGBM model validation for rainfall at day t
+======================================================
 
-Run once to compare 4 cases:
+Compares:
 1) Full features     + LightGBM Tweedie
 2) Full features     + LightGBM Two-stage
 3) Selected features + LightGBM Tweedie
 4) Selected features + LightGBM Two-stage
+
+Target definition:
+- target_1stage_prcp_mm = PRCP(t)
+- target_stage1_rain_label = 1 if PRCP(t) >= 0.1 mm else 0
+- target_stage2_prcp_log1p = log1p(PRCP(t))
 """
 
 from __future__ import annotations
@@ -18,7 +23,17 @@ from typing import Iterable, List, Tuple, Union
 
 import numpy as np
 import pandas as pd
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.metrics import (
+    average_precision_score,
+    brier_score_loss,
+    f1_score,
+    mean_absolute_error,
+    mean_squared_error,
+    precision_score,
+    r2_score,
+    recall_score,
+    roc_auc_score,
+)
 
 try:
     from lightgbm import LGBMClassifier, LGBMRegressor, early_stopping, log_evaluation
@@ -35,13 +50,12 @@ SCRIPT_PATH = Path(__file__).resolve()
 BASE_DIR = SCRIPT_PATH.parent.parent if SCRIPT_PATH.parent.name.lower() == "src" else SCRIPT_PATH.parent
 DEFAULT_INPUT_CSV = BASE_DIR / "data" / "features" / "feature_engineered_data.csv"
 
-RAIN_LABEL_MM = 1.0
+RAIN_LABEL_MM = 0.1
 TRAIN_END = pd.Timestamp("2023-01-01")
 VALID_END = pd.Timestamp("2024-01-01")
 
 TARGET_COLUMNS = [
     "PRCP",
-    "PRCP_label",
     "target_1stage_prcp_mm",
     "target_stage1_rain_label",
     "target_stage2_prcp_log1p",
@@ -51,10 +65,10 @@ DROP_FEATURE_COLUMNS = [
     "STATION",
     "time",
     "PRCP",
-    "PRCP_label",
     "target_1stage_prcp_mm",
     "target_stage1_rain_label",
     "target_stage2_prcp_log1p",
+    "PRCP_impute",
 ]
 
 SELECTED_FEATURES = [
@@ -101,11 +115,12 @@ SELECTED_FEATURES = [
     "VISIB_lag_2",
     "moisture_flux_850_lag_2",
     "LATITUDE",
+    "LONGITUDE",
     "u_500",
     "u_850_lag_1",
 ]
 
-RESULT_COLUMNS = [
+AMOUNT_RESULT_COLUMNS = [
     "feature_set",
     "n_features",
     "model",
@@ -116,13 +131,25 @@ RESULT_COLUMNS = [
     "bias_mean_pred_minus_true_mm",
 ]
 
+STAGE1_RESULT_COLUMNS = [
+    "feature_set",
+    "n_features",
+    "model",
+    "roc_auc",
+    "pr_auc",
+    "precision",
+    "recall",
+    "f1",
+    "brier_score",
+]
+
 
 # =============================================================================
 # CLI
 # =============================================================================
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Compare full features vs selected features with LightGBM Tweedie and Two-stage."
+        description="Compare full vs selected features with LightGBM Tweedie and Two-stage models."
     )
     parser.add_argument("--input-csv", type=str, default=str(DEFAULT_INPUT_CSV))
     parser.add_argument("--random-state", type=int, default=42)
@@ -160,33 +187,28 @@ def load_and_prepare_data(input_csv: Path) -> pd.DataFrame:
 
     for col in TARGET_COLUMNS:
         df[col] = pd.to_numeric(df[col], errors="coerce")
-        if df[col].isna().any():
-            raise ValueError(f"Column '{col}' contains missing or non-numeric values.")
+
+    n_before = len(df)
+    df = df.dropna(subset=TARGET_COLUMNS).copy()
+    n_dropped = n_before - len(df)
+    if n_dropped > 0:
+        print(f"Dropped rows with missing targets: {n_dropped:,}")
+
+    for col in TARGET_COLUMNS:
         if not np.isfinite(df[col].to_numpy(dtype=float)).all():
             raise ValueError(f"Column '{col}' contains inf/-inf values.")
 
     if (df["PRCP"] < 0).any():
         raise ValueError("Column 'PRCP' contains negative values.")
 
-    df["PRCP_label"] = df["PRCP_label"].astype(int)
     df["target_stage1_rain_label"] = df["target_stage1_rain_label"].astype(int)
 
-    label_values = set(df["PRCP_label"].unique())
-    if not label_values.issubset({0, 1}):
-        raise ValueError("Column 'PRCP_label' must contain only binary values {0, 1}.")
-
     expected_label = (df["PRCP"] >= RAIN_LABEL_MM).astype(int)
-    if not np.array_equal(df["PRCP_label"].values, expected_label.values):
-        raise ValueError(
-            f"PRCP_label must follow PRCP >= {RAIN_LABEL_MM} mm. "
-            "Rerun _07_feature_engineering.py before model validation."
-        )
+    if not np.array_equal(df["target_stage1_rain_label"].values, expected_label.values):
+        raise ValueError(f"target_stage1_rain_label must follow PRCP >= {RAIN_LABEL_MM} mm.")
 
     if not np.allclose(df["target_1stage_prcp_mm"], df["PRCP"], rtol=0, atol=1e-8):
-        raise ValueError("target_1stage_prcp_mm must be identical to PRCP.")
-
-    if not np.array_equal(df["target_stage1_rain_label"].values, df["PRCP_label"].values):
-        raise ValueError("target_stage1_rain_label must be identical to PRCP_label.")
+        raise ValueError("target_1stage_prcp_mm must be identical to PRCP for day-t prediction.")
 
     expected_log_target = np.log1p(df["PRCP"].astype(float))
     if not np.allclose(df["target_stage2_prcp_log1p"], expected_log_target, rtol=0, atol=1e-6):
@@ -208,7 +230,8 @@ def time_split(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFra
 
 def get_full_feature_cols(df: pd.DataFrame) -> List[str]:
     feature_cols = [
-        col for col in df.columns
+        col
+        for col in df.columns
         if col not in DROP_FEATURE_COLUMNS and pd.api.types.is_numeric_dtype(df[col])
     ]
 
@@ -228,7 +251,8 @@ def get_selected_feature_cols(df: pd.DataFrame, full_feature_cols: List[str]) ->
         if col in df.columns and not pd.api.types.is_numeric_dtype(df[col])
     )
     removed_by_leakage = sorted(
-        col for col in SELECTED_FEATURES
+        col
+        for col in SELECTED_FEATURES
         if col in df.columns and col not in full_feature_set and col not in non_numeric
     )
 
@@ -344,7 +368,7 @@ def train_one_stage_tweedie(
                 valid_df["target_1stage_prcp_mm"].values.astype(float),
             )
         ],
-        eval_metric="l2",
+        eval_metric="tweedie",
         callbacks=early_stop_callbacks(args),
     )
     return model
@@ -452,6 +476,37 @@ def metrics_row(
     }
 
 
+def safe_binary_metric(metric_fn, y_true: np.ndarray, y_score: np.ndarray) -> float:
+    if len(np.unique(y_true)) < 2:
+        return np.nan
+    return float(metric_fn(y_true, y_score))
+
+
+def stage1_metrics_row(
+    stage1: LGBMClassifier,
+    df: pd.DataFrame,
+    feature_cols: List[str],
+    feature_set_name: str,
+    n_features: int,
+) -> dict:
+    x = get_X(df, feature_cols)
+    y_true = df["target_stage1_rain_label"].astype(int).values
+    y_prob = stage1.predict_proba(x)[:, 1]
+    y_pred = (y_prob >= 0.5).astype(int)
+
+    return {
+        "feature_set": feature_set_name,
+        "n_features": n_features,
+        "model": "LightGBM_stage1_classifier",
+        "roc_auc": safe_binary_metric(roc_auc_score, y_true, y_prob),
+        "pr_auc": safe_binary_metric(average_precision_score, y_true, y_prob),
+        "precision": float(precision_score(y_true, y_pred, zero_division=0)),
+        "recall": float(recall_score(y_true, y_pred, zero_division=0)),
+        "f1": float(f1_score(y_true, y_pred, zero_division=0)),
+        "brier_score": float(brier_score_loss(y_true, y_prob)),
+    }
+
+
 def build_result_table(
     df: pd.DataFrame,
     pred_1stage: np.ndarray,
@@ -466,7 +521,7 @@ def build_result_table(
             metrics_row(y_true, pred_1stage, feature_set_name, n_features, "LightGBM_1stage_Tweedie"),
             metrics_row(y_true, pred_2stage, feature_set_name, n_features, "LightGBM_2stage_expected"),
         ],
-        columns=RESULT_COLUMNS,
+        columns=AMOUNT_RESULT_COLUMNS,
     )
 
 
@@ -491,31 +546,47 @@ def run_feature_set(
     valid_df: pd.DataFrame,
     test_df: pd.DataFrame,
     args: argparse.Namespace,
-) -> pd.DataFrame:
-    """Train both LightGBM scenarios for one feature set and return only test metrics."""
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     n_features = len(feature_cols)
 
     print(f"\nRunning {feature_set_name} | n_features={n_features}")
 
     one_stage = train_one_stage_tweedie(train_df, valid_df, feature_cols, args)
 
-    stage1, stage2, _, _ = train_two_stage_expected(
+    stage1, stage2, rainy_train_n, rainy_valid_n = train_two_stage_expected(
         train_df=train_df,
         valid_df=valid_df,
         feature_cols=feature_cols,
         args=args,
     )
 
+    print(f"Stage 2 rainy rows | train={rainy_train_n:,} | valid={rainy_valid_n:,}")
+
     test_pred_1stage = predict_one_stage(one_stage, test_df, feature_cols)
     test_pred_2stage = predict_two_stage_expected(stage1, stage2, test_df, feature_cols)
 
-    return build_result_table(
+    amount_table = build_result_table(
         df=test_df,
         pred_1stage=test_pred_1stage,
         pred_2stage=test_pred_2stage,
         feature_set_name=feature_set_name,
         n_features=n_features,
     )
+
+    stage1_table = pd.DataFrame(
+        [
+            stage1_metrics_row(
+                stage1=stage1,
+                df=test_df,
+                feature_cols=feature_cols,
+                feature_set_name=feature_set_name,
+                n_features=n_features,
+            )
+        ],
+        columns=STAGE1_RESULT_COLUMNS,
+    )
+
+    return amount_table, stage1_table
 
 
 # =============================================================================
@@ -538,8 +609,11 @@ def main() -> None:
     print(f"Valid: {valid_df['time'].min().date()} -> {valid_df['time'].max().date()} | n={len(valid_df):,}")
     print(f"Test : {test_df['time'].min().date()} -> {test_df['time'].max().date()} | n={len(test_df):,}")
 
-    test_tables = [
-        run_feature_set(
+    amount_tables = []
+    stage1_tables = []
+
+    for feature_set_name, feature_cols in feature_sets.items():
+        amount_table, stage1_table = run_feature_set(
             feature_set_name=feature_set_name,
             feature_cols=feature_cols,
             train_df=train_df,
@@ -547,17 +621,19 @@ def main() -> None:
             test_df=test_df,
             args=args,
         )
-        for feature_set_name, feature_cols in feature_sets.items()
-    ]
 
-    test_result = pd.concat(test_tables, ignore_index=True)
+        amount_tables.append(amount_table)
+        stage1_tables.append(stage1_table)
+
+    amount_result = pd.concat(amount_tables, ignore_index=True)
+    stage1_result = pd.concat(stage1_tables, ignore_index=True)
 
     pd.set_option("display.max_columns", None)
     pd.set_option("display.width", 220)
 
-    print_table("FINAL TEST 2x2 TABLE", test_result)
+    print_table("FINAL TEST STAGE 1 CLASSIFICATION TABLE", stage1_result)
+    print_table("FINAL TEST RAINFALL AMOUNT TABLE", amount_result)
 
 
 if __name__ == "__main__":
     main()
-
