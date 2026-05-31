@@ -170,16 +170,18 @@ def process_single_levels() -> None:
 
     print("\n=== BẮT ĐẦU XỬ LÝ SINGLE LEVEL ===")
 
-    df = process_single_level("2015")
+    dfs = []
 
-    for year in range(2016, 2025):
+    for year in range(2015, 2025):
         df_i = process_single_level(str(year))
-
-        print("--- Đang kết hợp các năm Single Level...")
-        df = pd.concat([df, df_i], ignore_index=True)
-
+        dfs.append(df_i)
         del df_i
         gc.collect()
+
+    print("--- Đang kết hợp các năm Single Level...")
+    df = pd.concat(dfs, ignore_index=True)
+    del dfs
+    gc.collect()
 
     df["time"] = pd.to_datetime(df["time"], errors="coerce")
     df = df.sort_values(["time", "latitude", "longitude"]).reset_index(drop=True)

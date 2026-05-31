@@ -38,7 +38,6 @@ VARIABLES = [
     "2m_temperature",
     "mean_sea_level_pressure",
     "surface_pressure",
-    "total_precipitation",
     "geopotential",
     "land_sea_mask",
 ]

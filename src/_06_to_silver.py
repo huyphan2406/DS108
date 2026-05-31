@@ -39,6 +39,9 @@ UNIT_CONVERSIONS = {
 PRESSURE_MIN, PRESSURE_MAX = 800, 1100
 GRID_RESOLUTION = 0.25
 
+START_DATE = "2015-01-01"
+END_DATE = "2024-12-31"
+
 GSOD_RAW_PATH = BASE_DIR / "data" / "raw" / "gsod" / "bronze_data.csv"
 GSOD_RAW_FALLBACK_PATH = BASE_DIR / "data" / "raw" / "bronze_data.csv"
 
@@ -193,75 +196,6 @@ def _forward_fill_stationary(df: pd.DataFrame, cols: list[str] | None = None) ->
             df[col] = df.groupby(group_keys)[col].transform(lambda x: x.ffill().bfill())
     return df
 
-def _fill_prcp_by_station_year_mean(df: pd.DataFrame) -> pd.DataFrame:
-    if "PRCP" not in df.columns:
-        return df
-
-    group_keys = _station_group_keys(df)
-
-    df = df.copy()
-    df["PRCP"] = pd.to_numeric(df["PRCP"], errors="coerce")
-    df["_year"] = pd.to_datetime(df["time"], errors="coerce").dt.year
-
-    # 1. Station-year mean
-    df["PRCP"] = df["PRCP"].fillna(
-        df.groupby(group_keys + ["_year"])["PRCP"].transform("mean")
-    )
-
-    # 2. Station mean fallback nếu cả station-year đó đều thiếu PRCP
-    df["PRCP"] = df["PRCP"].fillna(
-        df.groupby(group_keys)["PRCP"].transform("mean")
-    )
-
-    # 3. Global mean fallback nếu vẫn còn thiếu
-    global_mean = df["PRCP"].mean()
-    if pd.isna(global_mean):
-        raise ValueError("PRCP is entirely missing; cannot impute rainfall target.")
-
-    df["PRCP"] = df["PRCP"].fillna(global_mean)
-
-    # 4. Bảo đảm PRCP không âm
-    df["PRCP"] = df["PRCP"].clip(lower=0)
-
-    return df.drop(columns=["_year"], errors="ignore")
-
-def _fill_visibility(df: pd.DataFrame) -> pd.DataFrame:
-    if "VISIB" not in df.columns:
-        return df
-
-    group_keys = _station_group_keys(df)
-
-    df = df.sort_values(group_keys + ["time"]).reset_index(drop=True)
-    df["VISIB"] = pd.to_numeric(df["VISIB"], errors="coerce")
-    df["_month"] = pd.to_datetime(df["time"], errors="coerce").dt.month
-
-    # 1. Nội suy tuyến tính cho 1 khoảng thời (limit=2)
-    df["VISIB"] = df.groupby(group_keys)["VISIB"].transform(
-        lambda x: x.interpolate(
-            method="linear",
-            limit=2,
-            limit_area="inside"
-        )
-    )
-
-    # 2. Station-month median fallback
-    df["VISIB"] = df["VISIB"].fillna(
-        df.groupby(group_keys + ["_month"])["VISIB"].transform("median")
-    )
-
-    # 3. Station median fallback
-    df["VISIB"] = df["VISIB"].fillna(
-        df.groupby(group_keys)["VISIB"].transform("median")
-    )
-
-    # 4. Global median fallback
-    global_median = df["VISIB"].median()
-    if pd.isna(global_median):
-        raise ValueError("VISIB is entirely missing; cannot impute visibility values.")
-
-    df["VISIB"] = df["VISIB"].fillna(global_median)
-
-    return df.drop(columns=["_month"], errors="ignore")
 
 def _interpolate_missing_values(df: pd.DataFrame) -> pd.DataFrame:
     if "t2m" in df.columns and "TEMP" in df.columns:
@@ -276,21 +210,106 @@ def _interpolate_missing_values(df: pd.DataFrame) -> pd.DataFrame:
     if "sp" in df.columns and "STP" in df.columns:
         df["STP"] = df["STP"].fillna(df["sp"])
 
-    # Còn biến WDSP thì được xử lý missing bằng công thức
     if {"WDSP", "u10", "v10"}.issubset(df.columns):
         u10 = pd.to_numeric(df["u10"], errors="coerce")
         v10 = pd.to_numeric(df["v10"], errors="coerce")
         era5_wind_speed = np.sqrt(u10 ** 2 + v10 ** 2)
         df["WDSP"] = pd.to_numeric(df["WDSP"], errors="coerce").fillna(era5_wind_speed)
 
-    # Riêng biến VISIB thì được nội suy tuyến tính do đặc trưng nào tương tự để thay vào
-    df = _fill_visibility(df)
-
-    # Fill target prcp
-    df = _fill_prcp_by_station_year_mean(df)
+    group_keys = _station_group_keys(df)
+    if "VISIB" in df.columns:
+        df = df.sort_values(group_keys + ["time"]).reset_index(drop=True)
+        df["VISIB"] = pd.to_numeric(df["VISIB"], errors="coerce")
+        df["VISIB"] = df.groupby(group_keys)["VISIB"].transform(
+            lambda x: x.ffill(limit=2)
+        )
 
     return df
 
+def _first_valid(series: pd.Series):
+    valid = series.dropna()
+    return valid.iloc[0] if len(valid) > 0 else np.nan
+
+def _build_station_date_frame(
+    df: pd.DataFrame,
+    start_date: str = START_DATE,
+    end_date: str = END_DATE,
+) -> pd.DataFrame:
+    """
+    Tạo full STATION x DATE frame trước khi merge ERA5.
+
+    Kết quả:
+    - Mỗi trạm có đủ ngày từ START_DATE đến END_DATE.
+    - Ngày GSOD mất hẳn vẫn được tạo lại.
+    - Các cột GSOD weather của ngày bị mất là NaN.
+    - Metadata tĩnh LATITUDE/LONGITUDE/ELEVATION vẫn có.
+    - PRCP không được fill.
+    """
+
+    df = df.copy()
+
+    df["STATION"] = df["STATION"].astype(str)
+    df["time"] = pd.to_datetime(df["time"], errors="coerce")
+    df = df.dropna(subset=["STATION", "time"])
+
+    df = df.drop_duplicates(subset=["STATION", "time"]).reset_index(drop=True)
+
+    # 1. Lấy metadata tĩnh của từng trạm
+    station_meta = (
+        df.groupby("STATION", as_index=False)
+          .agg({
+              "LATITUDE": _first_valid,
+              "LONGITUDE": _first_valid,
+              "ELEVATION": _first_valid,
+          })
+    )
+
+    if station_meta[["LATITUDE", "LONGITUDE"]].isna().any().any():
+        raise ValueError("Một số trạm bị thiếu LATITUDE/LONGITUDE, không thể merge ERA5.")
+
+    # 2. Tạo full frame STATION x DATE
+    stations = station_meta["STATION"].astype(str).unique()
+    dates = pd.date_range(start=start_date, end=end_date, freq="1D")
+
+    frame = (
+        pd.MultiIndex.from_product(
+            [stations, dates],
+            names=["STATION", "time"]
+        )
+        .to_frame(index=False)
+    )
+
+    frame["STATION"] = frame["STATION"].astype(str)
+
+    # 3. Gắn metadata cho mọi ngày của từng trạm
+    frame = frame.merge(
+        station_meta,
+        on="STATION",
+        how="left"
+    )
+
+    # 4. Join dữ liệu GSOD động vào frame
+    # Ngày nào GSOD không có dòng thì các cột này sẽ tự động NaN
+    gsod_weather_cols = [
+        "TEMP", "PRCP", "WDSP", "DEWP", "STP", "SLP", "VISIB"
+    ]
+
+    gsod_weather_cols = [
+        col for col in gsod_weather_cols
+        if col in df.columns
+    ]
+
+    gsod_obs = df[["STATION", "time"] + gsod_weather_cols].copy()
+
+    frame = frame.merge(
+        gsod_obs,
+        on=["STATION", "time"],
+        how="left"
+    )
+
+    frame = frame.sort_values(["STATION", "time"]).reset_index(drop=True)
+
+    return frame
 
 def fill_missing(df: pd.DataFrame) -> pd.DataFrame:
     print("--- 📥 BƯỚC 3: Gộp ERA5 single-level vào các ngày GSOD hiện có ---")
@@ -298,6 +317,9 @@ def fill_missing(df: pd.DataFrame) -> pd.DataFrame:
     df = df.rename(columns={"DATE": "time"})
     df["time"] = pd.to_datetime(df["time"], errors="coerce")
     df = df.dropna(subset=["time"])
+
+    print("--- 📅 BƯỚC 4: Tạo frame rỗng cho những ngày bị missing ---")
+    df = _build_station_date_frame(df)
     df = _quantize_coordinates(df)
 
     df_era5 = _load_era5_single_level()
@@ -310,7 +332,7 @@ def fill_missing(df: pd.DataFrame) -> pd.DataFrame:
         suffixes=("", "_era5"),
     )
 
-    print("--- ⚖️ BƯỚC 4: Điền giá trị thiếu cho biến khí tượng không phải target ---")
+    print("--- ⚖️ BƯỚC 5: Điền giá trị thiếu cho biến khí tượng không phải target ---")
 
     df = _forward_fill_stationary(df)
     df = _interpolate_missing_values(df)
@@ -320,6 +342,11 @@ def fill_missing(df: pd.DataFrame) -> pd.DataFrame:
         df = df.drop(columns=era5_suffix_cols, errors="ignore")
 
     df = df.drop(columns=FINAL_DROPS, errors="ignore")
+
+    # Check leakage
+    leaked_cols = [col for col in FINAL_DROPS if col in df.columns]
+    if leaked_cols:
+        raise ValueError(f"ERA5 support columns chưa được drop: {leaked_cols}")
 
     return df
 
@@ -355,11 +382,11 @@ def _merge_pressure_data(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def merge_file(df: pd.DataFrame) -> pd.DataFrame:
-    print("--- 📥 BƯỚC 5: Gộp dữ liệu áp suất ERA5 ---")
+    print("--- 📥 BƯỚC 6: Gộp dữ liệu áp suất ERA5 ---")
 
     df = _merge_pressure_data(df)
 
-    print("--- ⚖️ BƯỚC 6: Làm sạch & làm tròn giá trị ---")
+    print("--- ⚖️ BƯỚC 7: Làm sạch & làm tròn giá trị ---")
 
     df = df.drop(columns=["latitude", "longitude"], errors="ignore")
 

@@ -54,6 +54,35 @@ def _extract_pressure_levels(ds: xr.Dataset, level: int) -> xr.Dataset:
     ds_level = ds_level.rename({v: f"{v}_{level}" for v in ds_level.data_vars})
     return ds_level
 
+def _sanity_check_pressure_levels(df: pd.DataFrame) -> None:
+    """
+    Kiểm tra vật lý cơ bản cho ERA5 pressure-level.
+    Không sửa dữ liệu, chỉ cảnh báo/lỗi n:contentReference[oaicite:0]{index=0}u.
+    """
+
+    if {"z_500", "z_850"}.issubset(df.columns):
+        valid = df[["z_500", "z_850"]].dropna()
+        violation_rate = (valid["z_500"] <= valid["z_850"]).mean()
+
+        print(f"z_500 <= z_850 violation rate: {violation_rate:.4%}")
+
+        if violation_rate > 0.01:
+            raise ValueError(
+                "Pressure-level sanity check failed: z_500 should be higher than z_850."
+            )
+
+    if {"t_500", "t_850"}.issubset(df.columns):
+        valid = df[["t_500", "t_850"]].dropna()
+        violation_rate = (valid["t_850"] <= valid["t_500"]).mean()
+
+        print(f"t_850 <= t_500 violation rate: {violation_rate:.4%}")
+
+        if violation_rate > 0.10:
+            print(
+                "[WARNING] Many cases where t_850 <= t_500. "
+                "This may happen in some atmospheric conditions, but should be checked."
+            )
+
 def _convert_temperature_kelvin_to_celsius(df: pd.DataFrame, temp_cols: List[str]) -> pd.DataFrame:
     for col in temp_cols:
         if col in df.columns:
@@ -168,6 +197,8 @@ def merge_pressure_levels(grib_path: str | Path) -> pd.DataFrame:
 
     df_final = _downsample_to_float32(df_final)
 
+    _sanity_check_pressure_levels(df_final)
+
     print(f"--- Hoàn thành merge_pressure. Kích thước bảng: {df_final.shape}")
 
     del ds, ds_500, ds_850, df_500, df_850
@@ -177,15 +208,10 @@ def merge_pressure_levels(grib_path: str | Path) -> pd.DataFrame:
 
 # 2. CONCATENATING MULTIPLE FILES
 
-def concatenate_pressure_files(base_path: str | Path, folders: List[int]) -> pd.DataFrame:
+def concatenate_pressure_files(folders: List[int]) -> pd.DataFrame:
     print("\n--- Bắt đầu gộp các file Parquet tổng hợp...")
 
-    base_path = Path(base_path)
-
-    if not base_path.exists():
-        raise FileNotFoundError(f"Không tìm thấy file parquet base: {base_path}")
-
-    all_chunks = [pd.read_parquet(base_path)]
+    all_chunks = []
 
     for folder in tqdm(folders, desc="Processing folders"):
         path = BASE_PRESSURE_CLEAN / f"era5_{folder}.parquet"
@@ -241,10 +267,7 @@ def process_pressure_levels() -> None:
         gc.collect()
 
     # Concatenate all yearly files
-    base_path = BASE_PRESSURE_CLEAN / "era5_2015.parquet"
-    folders = list(range(2016, 2025))
-
-    concatenate_pressure_files(base_path, folders)
+    concatenate_pressure_files(list(range(2015, 2025)))
 
 if __name__ == "__main__":
     process_pressure_levels()

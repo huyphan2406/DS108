@@ -46,6 +46,8 @@ DYNAMIC_FEATURES = [
 
 GROUPBY_COLS = ["STATION"]
 
+PRCP_PROXY_COL = "PRCP_impute"
+
 # UTILITY FUNCTIONS
 
 def _get_groupby_cols(df: pd.DataFrame) -> List[str]:
@@ -61,6 +63,32 @@ def _safe_numeric(df: pd.DataFrame, cols: List[str]) -> pd.DataFrame:
     for col in cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df
+
+def create_prcp_proxy(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    PRCP gốc là target thật, không fill.
+    PRCP_impute chỉ có giá trị tại các dòng PRCP gốc bị missing.
+    PRCP_impute chỉ dùng để tạo PRCP_lag và PRCP_past rolling.
+    """
+    if "PRCP" not in df.columns:
+        return df
+
+    group_cols = _get_groupby_cols(df)
+    df = df.sort_values(group_cols + ["time"]).reset_index(drop=True)
+
+    df["PRCP"] = pd.to_numeric(df["PRCP"], errors="coerce")
+
+    # Chỉ lấy giá trị mưa gần nhất tối đa 2 ngày trước đó.
+    # Không fill trực tiếp vào PRCP thật, chỉ tạo proxy cho lag/rolling.
+    past_fill = df.groupby(group_cols)["PRCP"].ffill(limit=2)
+
+    df[PRCP_PROXY_COL] = np.where(
+        df["PRCP"].isna(),
+        past_fill,
+        np.nan
+    )
+
     return df
 
 # 1. TEMPORAL FEATURES
@@ -172,12 +200,35 @@ def create_lag_features(
     group_cols = _get_groupby_cols(df)
     df = df.sort_values(group_cols + ["time"]).reset_index(drop=True)
 
-    for feature in features:
-        if feature not in df.columns:
-            continue
+    if "PRCP" in df.columns:
+        if PRCP_PROXY_COL in df.columns:
+            prcp_source = df["PRCP"].combine_first(df[PRCP_PROXY_COL])
+        else:
+            prcp_source = df["PRCP"]
+    else:
+        prcp_source = None
 
-        for lag in lags:
-            df[f"{feature}_lag_{lag}"] = df.groupby(group_cols)[feature].shift(lag)
+    for feature in features:
+        if feature == "PRCP":
+            if prcp_source is None:
+                continue
+
+            for lag in lags:
+                df[f"{feature}_lag_{lag}"] = (
+                    prcp_source
+                    .groupby([df[col] for col in group_cols])
+                    .shift(lag)
+                )
+
+        else:
+            if feature not in df.columns:
+                continue
+
+            for lag in lags:
+                df[f"{feature}_lag_{lag}"] = (
+                    df.groupby(group_cols)[feature]
+                    .shift(lag)
+                )
 
     return df
 
@@ -194,26 +245,35 @@ def create_rolling_statistics(
     group_cols = _get_groupby_cols(df)
     df = df.sort_values(group_cols + ["time"]).reset_index(drop=True)
 
-    # Rolling mean for feature persistence
     for col in features:
+        if col == "PRCP":
+            continue
+
         if col in df.columns:
-            df[f"{col}_{window}d_mean"] = df.groupby(group_cols)[col].transform(
-                lambda x: x.rolling(window=window, min_periods=1).mean()
+            df[f"{col}_{window}d_mean"] = (
+                df.groupby(group_cols)[col]
+                .transform(lambda x: x.shift(1).rolling(window=window, min_periods=1).mean())
             )
 
-    # Rolling sum for moisture flux accumulation
     if "moisture_flux_850" in df.columns:
-        df[f"moisture_flux_{window}d_sum"] = df.groupby(group_cols)["moisture_flux_850"].transform(
-            lambda x: x.rolling(window=window, min_periods=1).sum()
+        df[f"moisture_flux_{window}d_sum"] = (
+            df.groupby(group_cols)["moisture_flux_850"]
+            .transform(lambda x: x.shift(1).rolling(window=window, min_periods=1).sum())
         )
 
-    # Past-only rolling rainfall history
     if "PRCP" in df.columns:
-        df[f"PRCP_past_{window}d_mean"] = df.groupby(group_cols)["PRCP"].transform(
+        if PRCP_PROXY_COL in df.columns:
+            prcp_source = df["PRCP"].combine_first(df[PRCP_PROXY_COL])
+        else:
+            prcp_source = df["PRCP"]
+
+        prcp_grouped = prcp_source.groupby([df[col] for col in group_cols])
+
+        df[f"PRCP_past_{window}d_mean"] = prcp_grouped.transform(
             lambda x: x.shift(1).rolling(window=window, min_periods=1).mean()
         )
 
-        df[f"PRCP_past_{window}d_sum"] = df.groupby(group_cols)["PRCP"].transform(
+        df[f"PRCP_past_{window}d_sum"] = prcp_grouped.transform(
             lambda x: x.shift(1).rolling(window=window, min_periods=1).sum()
         )
 
@@ -222,32 +282,21 @@ def create_rolling_statistics(
 # 7. TARGET ENCODING
 
 def prepare_target(df: pd.DataFrame) -> pd.DataFrame:
-    # Check target
-    if "PRCP" not in df.columns:
-        raise KeyError("Không tìm thấy cột PRCP để tạo target.")
-
     df["PRCP"] = pd.to_numeric(df["PRCP"], errors="coerce")
 
-    if df["PRCP"].isna().any():
-        raise ValueError("PRCP vẫn còn missing sau bước silver. Hãy kiểm tra lại _06_to_silver.py.")
+    df[TARGET_1STAGE] = df["PRCP"]
 
-    if not np.isfinite(df["PRCP"].to_numpy(dtype=float)).all():
-        raise ValueError("PRCP chứa inf/-inf.")
+    df[TARGET_STAGE1] = np.where(
+        df["PRCP"].notna(),
+        (df["PRCP"] >= RAIN_LABEL_THRESHOLD_MM).astype("int8"),
+        np.nan,
+    )
 
-    if (df["PRCP"] < 0).any():
-        raise ValueError("PRCP chứa giá trị âm.")
-
-    # Tạo target label
-    # Dataset-level rainfall occurrence label.
-    df["PRCP_label"] = (df["PRCP"] >= RAIN_LABEL_THRESHOLD_MM).astype("int8")
-
-    # Scenario-specific targets.
-    # Scenario 1 uses Tweedie objective in the model script, while the target remains PRCP in mm.
-    df[TARGET_1STAGE] = df["PRCP"].astype(float)
-
-    # Scenario 2 consists of rain occurrence classification and positive rainfall amount regression.
-    df[TARGET_STAGE1] = df["PRCP_label"].astype("int8")
-    df[TARGET_STAGE2] = np.log1p(df["PRCP"].astype(float))
+    df[TARGET_STAGE2] = np.where(
+        df["PRCP"].notna(),
+        np.log1p(df["PRCP"].astype(float)),
+        np.nan,
+    )
 
     return df
 
@@ -305,6 +354,9 @@ def feature_engineering(
     print("🌊 Creating flux features...")
     df = create_flux_features(df)
 
+    print("🌧️ Creating PRCP proxy for lag/rolling only...")
+    df = create_prcp_proxy(df)
+
     print("⏳ Creating temporal dynamics (lag & rolling)...")
     df = create_lag_features(df)
     df = create_rolling_statistics(df)
@@ -321,7 +373,6 @@ def feature_engineering(
     df.to_csv(output_path, index=False)
 
     print(f"✨ Feature engineering complete! Shape: {df.shape}")
-    print("Target columns created: PRCP_label, target_1stage_prcp_mm, target_stage1_rain_label, target_stage2_prcp_log1p")
-
+    print("Target columns created: target_1stage_prcp_mm, target_stage1_rain_label, target_stage2_prcp_log1p")
 if __name__ == "__main__":
     feature_engineering()
