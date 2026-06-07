@@ -50,6 +50,7 @@ warnings.filterwarnings("ignore")
 SCRIPT_PATH = Path(__file__).resolve()
 BASE_DIR = SCRIPT_PATH.parent.parent if SCRIPT_PATH.parent.name.lower() == "src" else SCRIPT_PATH.parent
 DEFAULT_INPUT_CSV = BASE_DIR / "data" / "features" / "feature_engineered_data.csv"
+DEFAULT_OUTPUT_DIR = BASE_DIR / "outputs" / "model_evaluation"
 
 RAIN_LABEL_MM = 0.1
 PERSISTENCE_COL = "PRCP_lag_1"
@@ -207,6 +208,7 @@ def parse_args() -> argparse.Namespace:
         description="Evaluate Persistence baseline, one-stage Tweedie, and two-stage LightGBM using 5 rainfall metrics."
     )
     parser.add_argument("--input-csv", type=str, default=str(DEFAULT_INPUT_CSV))
+    parser.add_argument("--output-dir", type=str, default=str(DEFAULT_OUTPUT_DIR))
     parser.add_argument("--random-state", type=int, default=42)
     parser.add_argument("--n-estimators", type=int, default=2000)
     parser.add_argument("--early-stopping-rounds", type=int, default=100)
@@ -615,12 +617,52 @@ def print_table(title: str, table: pd.DataFrame) -> None:
     print("=" * 120)
     print(table.to_string(index=False))
 
+def save_report_tables(
+    output_dir: Path,
+    validation_report: pd.DataFrame,
+    test_report: pd.DataFrame,
+    comparison_report: pd.DataFrame,
+    validation_result: pd.DataFrame,
+    test_result: pd.DataFrame,
+    comparison_result: pd.DataFrame,
+) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    validation_report.to_csv(output_dir / "table_1_validation_results_2023.csv", index=False, encoding="utf-8-sig")
+    test_report.to_csv(output_dir / "table_2_final_test_results_2024.csv", index=False, encoding="utf-8-sig")
+    comparison_report.to_csv(output_dir / "table_3_full_vs_selected_test.csv", index=False, encoding="utf-8-sig")
+
+    validation_result.to_csv(output_dir / "raw_validation_results_2023.csv", index=False, encoding="utf-8-sig")
+    test_result.to_csv(output_dir / "raw_test_results_2024.csv", index=False, encoding="utf-8-sig")
+    comparison_result.to_csv(output_dir / "raw_full_vs_selected_test.csv", index=False, encoding="utf-8-sig")
+
+    with open(output_dir / "model_evaluation_summary.txt", "w", encoding="utf-8") as f:
+        f.write("DS108 rainfall model evaluation\\n")
+        f.write("=" * 80 + "\\n\\n")
+        f.write(f"Rain label rule: PRCP >= {RAIN_LABEL_MM} mm\\n")
+        f.write("Main evaluation metrics: MAE, RMSE, WAPE, R2, Bias\\n\\n")
+
+        f.write("TABLE 1. Validation results on 2023 set\\n")
+        f.write(validation_report.to_string(index=False))
+        f.write("\\n\\n")
+
+        f.write("TABLE 2. Final test results on 2024 set\\n")
+        f.write(test_report.to_string(index=False))
+        f.write("\\n\\n")
+
+        f.write("TABLE 3. Full features vs Selected features on test set\\n")
+        f.write(comparison_report.to_string(index=False))
+        f.write("\\n")
+
+    print(f"\\nSaved model evaluation outputs to: {output_dir}")
+
 # =============================================================================
 # Main
 # =============================================================================
 def main() -> None:
     args = parse_args()
     input_csv = resolve_path(args.input_csv)
+    output_dir = resolve_path(args.output_dir)
 
     print(f"Input: {input_csv}")
     print(f"Rain label rule: PRCP >= {RAIN_LABEL_MM} mm")
@@ -664,6 +706,16 @@ def main() -> None:
     print_table("TABLE 1. Validation results on 2023 set", validation_report)
     print_table("TABLE 2. Final test results on 2024 set", test_report)
     print_table("TABLE 3. Full features vs Selected features on test set", comparison_report)
+
+    save_report_tables(
+        output_dir=output_dir,
+        validation_report=validation_report,
+        test_report=test_report,
+        comparison_report=comparison_report,
+        validation_result=validation_result,
+        test_result=test_result,
+        comparison_result=comparison_result,
+    )
 
 if __name__ == "__main__":
     main()

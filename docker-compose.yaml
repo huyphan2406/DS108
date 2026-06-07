@@ -1,18 +1,19 @@
+name: ds108
+
 x-airflow-common: &airflow-common
   build:
     context: .
     dockerfile: Dockerfile.airflow
 
-  env_file:
-    - .env
-
   environment:
+    AIRFLOW_HOME: /opt/airflow
     AIRFLOW__CORE__EXECUTOR: SequentialExecutor
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: sqlite:////opt/airflow/airflow.db
+    AIRFLOW__WEBSERVER__SECRET_KEY: ds108-local-airflow-secret-key
     AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
-    AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth
+    AIRFLOW__API__AUTH_BACKENDS: "airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session"
     DS108_PROJECT_ROOT: /opt/airflow
     PYTHONPATH: /opt/airflow
     CDSAPI_URL: ${CDSAPI_URL:-https://cds.climate.copernicus.eu/api}
@@ -35,11 +36,14 @@ services:
       bash -c "
       mkdir -p /opt/airflow/data &&
       airflow db migrate &&
-      airflow users list | grep -q admin ||
+      (airflow users delete -u admin || true) &&
       airflow users create
-      --username admin
-      --password admin
-      --email admin@example.com
+      -u admin
+      -p admin
+      -f admin
+      -l Admin
+      -r Admin
+      -e admin@example.com
       "
 
   airflow-webserver:
@@ -65,9 +69,6 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: ds108_dashboard
-
-    env_file:
-      - .env
 
     environment:
       DS108_PROJECT_ROOT: /app

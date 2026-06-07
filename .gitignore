@@ -38,6 +38,7 @@ Thumbs.db
 # =========================
 # Airflow runtime files
 # =========================
+airflow.cfg
 airflow.db
 airflow-webserver.pid
 logs/
