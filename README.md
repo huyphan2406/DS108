@@ -2,68 +2,55 @@
 
 ## 1. Giới thiệu
 
-Đây là đồ án xây dựng hệ thống dữ liệu phục vụ bài toán dự báo lượng mưa theo ngày tại Việt Nam. Project được nâng cấp từ dạng notebook/script rời rạc thành một hệ thống có khả năng tái lập, gồm ba thành phần chính:
+Đồ án xây dựng hệ thống dữ liệu phục vụ bài toán dự báo lượng mưa theo ngày tại Việt Nam. Hệ thống gồm pipeline xử lý dữ liệu, mô hình dự báo, Airflow để tự động hóa, Docker để đóng gói môi trường và Streamlit để demo kết quả.
 
-- **Airflow**: điều phối và giám sát full data pipeline.
-- **Streamlit**: dashboard tương tác để demo, xem EDA, kiểm tra chất lượng dữ liệu và kết quả mô hình.
-- **Docker Compose**: đóng gói toàn bộ môi trường chạy để có thể triển khai lại nhất quán trên máy khác.
+Mục tiêu chính là tạo ra bộ dữ liệu đặc trưng cuối cùng và đánh giá mô hình dự báo mưa theo ngày.
 
 ---
 
-## 2. Kiến trúc hệ thống
+## 2. Thành phần chính
 
-Luồng xử lý tổng quát:
-
-```text
-Raw Data
-   ↓
-Full Pipeline trong src/_01_*.py → ... → src/_08_*.py
-   ↓
-Airflow điều phối và ghi log
-   ↓
-data/features + outputs + reports
-   ↓
-Streamlit Dashboard đọc output để demo
-   ↓
-Docker Compose đóng gói toàn bộ hệ thống
-```
-
-Vai trò từng thành phần:
-
-```text
-Airflow   = tự động hóa pipeline
-Streamlit = giao diện dashboard tương tác
-Docker    = đóng gói môi trường chạy
-```
+| Thành phần | Vai trò |
+|---|---|
+| `src/` | Chứa các bước thu thập, xử lý dữ liệu, tạo đặc trưng và huấn luyện mô hình |
+| `dags/` | Chứa DAG Airflow điều phối pipeline |
+| `demo/` | Chứa dashboard Streamlit |
+| `data/` | Lưu dữ liệu thô, dữ liệu sạch và dữ liệu đặc trưng |
+| `outputs/` | Lưu kết quả mô hình |
+| `Dockerfile` | Build dashboard Streamlit |
+| `Dockerfile.airflow` | Build môi trường Airflow |
+| `docker-compose.yaml` | Khởi chạy toàn bộ hệ thống |
 
 ---
 
-## 3. Cấu trúc thư mục chính
+## 3. Cấu trúc thư mục
 
 ```text
 DS108/
-├── data/
-│   ├── raw/
-│   ├── clean/
-│   └── features/
-├── src/
-│   ├── _01_*.py
-│   ├── _02_*.py
-│   ├── ...
-│   └── _08_*.py
 ├── dags/
 │   └── rainfall_pipeline_dag.py
 ├── demo/
 │   └── app.py
-├── scripts/
-│   └── run_pipeline.py
+├── src/
+│   ├── _01_*.py
+│   ├── _02_*.py
+│   ├── _03_*.py
+│   ├── _04_*.py
+│   ├── _05_*.py
+│   ├── _06_*.py
+│   ├── _07_*.py
+│   └── _08_model.py
+├── data/
+│   ├── raw/
+│   ├── clean/
+│   └── features/
 ├── outputs/
-├── reports/
-├── notebooks/
+│   └── model_evaluation/
 ├── Dockerfile
 ├── Dockerfile.airflow
 ├── docker-compose.yaml
 ├── requirements.txt
+├── .env.example
 ├── .dockerignore
 ├── .gitignore
 └── README.md
@@ -71,76 +58,118 @@ DS108/
 
 ---
 
-## 4. Full Pipeline
+## 4. Nguồn dữ liệu
 
-Pipeline chính nằm trong thư mục `src/`. Các file pipeline được đặt theo quy ước:
+Project sử dụng các nguồn dữ liệu khí tượng chính:
 
-```text
-_NN_ten_buoc.py
-```
-
-Ví dụ:
-
-```text
-_01_*.py
-_02_*.py
-...
-_08_*.py
-```
-
-Hệ thống sẽ tự động phát hiện các file có pattern:
-
-```text
-^_\d{2}_.+\.py$
-```
-
-Sau đó sắp xếp theo số thứ tự và chạy tuần tự từ `_01` đến `_08`.
-
-Các file helper, backup, old, test, tmp sẽ không được xem là pipeline chính.
+| Nguồn | Mô tả |
+|---|---|
+| NOAA GSOD | Dữ liệu quan trắc trạm khí tượng theo ngày |
+| ERA5 Single-level | Dữ liệu tái phân tích khí tượng tầng bề mặt |
+| ERA5 Pressure-level | Dữ liệu tái phân tích theo tầng khí áp |
+| ENSO / MEI | Chỉ số khí hậu hỗ trợ phân tích biến động mùa vụ |
 
 ---
 
-## 5. Airflow
+## 5. Luồng xử lý
 
-Airflow được dùng để điều phối full pipeline.
+```text
+Raw Data
+   ↓
+Cleaning / Processing
+   ↓
+Feature Engineering
+   ↓
+Model Training & Evaluation
+   ↓
+Dashboard
+```
 
-DAG chính:
+---
+
+## 6. Cấu hình môi trường
+
+Project sử dụng hai file môi trường:
+
+```text
+.env.example  # file mẫu, được nộp hoặc commit
+.env          # file thật, dùng để chạy local, không commit
+```
+
+Tạo file `.env`:
+
+```bash
+cp .env.example .env
+```
+
+Trên Windows PowerShell:
+
+```powershell
+copy .env.example .env
+```
+
+Nội dung `.env.example`:
+
+```env
+CDSAPI_URL=https://cds.climate.copernicus.eu/api
+CDSAPI_KEY=YOUR_UID:YOUR_API_KEY
+AIRFLOW_UID=50000
+```
+
+Sau đó mở `.env` và thay `CDSAPI_KEY` bằng API key thật của tài khoản Copernicus CDS.
+
+---
+
+## 7. Cách chạy bằng Docker
+
+Yêu cầu:
+
+- Đã cài Docker Desktop.
+- Đã mở Docker Desktop.
+- Đang đứng tại thư mục gốc project `DS108/`.
+
+Chạy hệ thống:
+
+```bash
+docker compose down --volumes --remove-orphans
+docker compose up --build
+```
+
+Sau khi chạy thành công, mở:
+
+```text
+Airflow:   http://localhost:8081
+Streamlit: http://localhost:8501
+```
+
+Tài khoản Airflow mặc định:
+
+```text
+Username: admin
+Password: admin
+```
+
+---
+
+## 8. Chạy pipeline bằng Airflow
+
+Các bước:
+
+1. Mở Airflow UI.
+2. Đăng nhập bằng `admin/admin`.
+3. Tìm DAG:
 
 ```text
 ds108_rainfall_pipeline
 ```
 
-Các bước chính trong DAG:
-
-```text
-check_project_structure
-→ prepare_output_dirs
-→ run_01_...
-→ run_02_...
-→ ...
-→ run_08_...
-→ validate_feature_dataset
-→ summarize_outputs
-```
-
-Airflow sẽ:
-
-- Kiểm tra cấu trúc project.
-- Chuẩn bị thư mục output.
-- Tự động phát hiện và chạy các script pipeline trong `src/`.
-- Dừng pipeline nếu một task bị lỗi.
-- Kiểm tra output quan trọng sau khi chạy.
-- Ghi log cho từng bước.
-
-Output quan trọng được kiểm tra:
-
-```text
-data/features/feature_engineered_data.csv
-```
+4. Bật DAG nếu đang tắt.
+5. Nhấn **Trigger DAG**.
+6. Theo dõi trạng thái trong tab **Graph** hoặc **Grid**.
 
 ---
 
-## 6. Streamlit Dashboard
+## 9. Streamlit Dashboard
 
 Dashboard nằm tại:
 
@@ -148,188 +177,20 @@ Dashboard nằm tại:
 demo/app.py
 ```
 
-Dashboard đọc dữ liệu từ output của pipeline:
-
-```text
-data/features/feature_engineered_data.csv
-outputs/
-reports/
-```
-
-Dashboard hỗ trợ:
-
-- Xem tổng quan dữ liệu.
-- Lọc dữ liệu theo thời gian.
-- Lọc theo trạm khí tượng nếu có cột `STATION`.
-- Xem bảng dữ liệu sau lọc.
-- Xem thống kê mô tả.
-- Xem phân phối biến.
-- Xem phân phối ngày mưa/không mưa.
-- Xem lượng mưa theo thời gian.
-- Xem tính mùa vụ theo tháng.
-- Xem correlation heatmap.
-- Kiểm tra missing values.
-- Kiểm tra duplicate.
-- Kiểm tra giá trị PRCP bất thường.
-- Xem bản đồ trạm nếu có `LATITUDE` và `LONGITUDE`.
-- Xem kết quả mô hình nếu có file trong `outputs/` hoặc `reports/`.
-
-Dashboard chỉ đọc output, không xử lý pipeline chính.
-
----
-
-## 7. Docker Compose
-
-Hệ thống được đóng gói bằng Docker Compose với ba service:
-
-```text
-airflow   = chạy Airflow Webserver + Scheduler
-dashboard = chạy Streamlit Dashboard
-pipeline  = chạy full pipeline thủ công khi cần
-```
-
-File cấu hình chính:
-
-```text
-docker-compose.yaml
-```
-
----
-
-## 8. Cách chạy hệ thống
-
-Yêu cầu trước khi chạy:
-
-- Cài Docker Desktop.
-- Mở Docker Desktop trước khi chạy lệnh.
-- Đứng tại thư mục gốc project `DS108/`.
-
-Chạy toàn bộ hệ thống:
-
-```bash
-docker compose up --build
-```
-
-Sau khi chạy, mở Airflow tại:
-
-```text
-http://localhost:8080
-```
-
-Tài khoản đăng nhập:
-
-```text
-username: admin
-password: admin
-```
-
-Mở Streamlit Dashboard tại:
+Mở dashboard tại:
 
 ```text
 http://localhost:8501
 ```
 
----
+Dashboard hỗ trợ:
 
-## 9. Chạy full pipeline bằng Airflow
-
-Các bước:
-
-```text
-1. Mở http://localhost:8080
-2. Đăng nhập bằng admin/admin
-3. Tìm DAG: ds108_rainfall_pipeline
-4. Bật DAG
-5. Bấm Trigger DAG
-6. Vào Graph để xem trạng thái từng task
-```
-
-Ý nghĩa trạng thái:
-
-```text
-Màu xanh = task chạy thành công
-Màu đỏ   = task bị lỗi, cần vào Logs để xem nguyên nhân
-```
+- Xem dữ liệu sau xử lý.
+- Lọc theo thời gian và trạm khí tượng.
+- Xem thống kê mô tả.
+- Xem EDA cơ bản.
+- Kiểm tra missing values, duplicate và giá trị bất thường.
+- Xem bản đồ trạm khí tượng.
+- Xem kết quả mô hình trong `outputs/model_evaluation/`.
 
 ---
-
-## 10. Chạy full pipeline thủ công bằng Docker
-
-Có thể chạy full pipeline không qua giao diện Airflow bằng lệnh:
-
-```bash
-docker compose --profile manual run --rm pipeline
-```
-
-Lệnh này sẽ chạy:
-
-```bash
-python scripts/run_pipeline.py
-```
-
-Script `run_pipeline.py` sẽ tự động tìm và chạy tuần tự các file pipeline chính trong `src/`.
-
----
-
-## 11. Dừng hệ thống
-
-Dừng container:
-
-```bash
-docker compose down
-```
-
-Nếu cần xóa sạch container/volume để chạy lại từ đầu:
-
-```bash
-docker compose down --volumes --remove-orphans
-```
-
----
-
-## 12. Lưu ý về tính tái lập
-
-Hệ thống mặc định chạy full pipeline từ các script gốc trong `src/`, không chỉ chạy demo từ các bước cuối.
-
-Nếu một số bước đầu như download/crawl dữ liệu cần internet hoặc API key, cần chuẩn bị trước file `.env` dựa trên `.env.example` hoặc đảm bảo dữ liệu raw đã có trong `data/raw/`.
-
-Không nên đưa file `.env` thật vào bản nộp hoặc Git repository.
-
----
-
-## 13. Các file không nên nộp/Git tracking
-
-Các file/thư mục cá nhân hoặc nhạy cảm nên được bỏ qua:
-
-```text
-.env
-.idea/
-__pycache__/
-*.pyc
-.venv/
-venv/
-logs/
-```
-
-Nên dùng `.env.example` để mô tả biến môi trường cần thiết thay vì nộp `.env` thật.
-
----
-
-## 14. Minh chứng nên chụp khi nộp báo cáo
-
-Nên chụp các hình sau:
-
-```text
-1. Docker Compose đang chạy các service.
-2. Airflow UI có DAG ds108_rainfall_pipeline.
-3. Airflow Graph hiển thị các task từ _01 đến _08.
-4. Một DAG run thành công hoặc log task thành công.
-5. Streamlit Dashboard trang tổng quan.
-6. Biểu đồ EDA hoặc missing value trên dashboard.
-```
-
----
-
-## 15. Mô tả ngắn để đưa vào báo cáo
-
-Hệ thống được triển khai theo hướng production-lite bằng Docker Compose. Airflow chịu trách nhiệm điều phối full pipeline từ các script `src/_01_*.py` đến `src/_08_*.py`, Streamlit cung cấp dashboard tương tác để xem EDA, kiểm tra chất lượng dữ liệu và kết quả mô hình, còn Docker đóng gói toàn bộ môi trường chạy gồm mã nguồn, thư viện Python, Airflow và Streamlit. Cách triển khai này giúp project có khả năng tái lập, dễ demo và phù hợp hơn với quy trình xây dựng hệ thống dữ liệu trong thực tế.
