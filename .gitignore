@@ -1,11 +1,75 @@
-# Chặn toàn bộ thư mục chứa data
-data/
-*.csv
-*.parquet
-*.nc
-*.grib
-
-# Chặn file môi trường hoặc cấu hình cá nhân
-.env
+# =========================
+# Python cache / bytecode
+# =========================
 __pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .ipynb_checkpoints/
+
+# =========================
+# Virtual environments
+# =========================
+.venv/
+venv/
+env/
+ENV/
+
+# =========================
+# IDE / OS files
+# =========================
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# =========================
+# Secrets / local config
+# =========================
+.env
+.cdsapirc
+!.env.example
+
+# =========================
+# Airflow runtime files
+# =========================
+airflow.db
+airflow-webserver.pid
+logs/
+plugins/__pycache__/
+
+# =========================
+# Generated data / artifacts
+# =========================
+data/
+outputs/
+reports/
+
+# Keep empty directory structure if needed
+!data/.gitkeep
+!outputs/.gitkeep
+!reports/.gitkeep
+
+# =========================
+# Notebook / report exports
+# =========================
+*.html
+*.pdf
+
+# =========================
+# Archives / temporary files
+# =========================
+*.zip
+*.rar
+*.7z
+*.tar
+*.tar.gz
+*.tgz
+*.tmp
+*.bak
+*.log

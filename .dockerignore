@@ -1,21 +1,67 @@
-__pycache__/
-*.pyc
-.venv/
-.ipynb_checkpoints/
-
-logs/
-outputs/
-models/
-
-data/raw/
-data/processed/
-data/features/
-
-*.grib
-*.grib2
-*.nc
-*.csv
-
-.env
+# =========================
+# Git / IDE / OS files
+# =========================
 .git/
 .gitignore
+.gitattributes
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# =========================
+# Python cache / virtual env
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+.venv/
+venv/
+env/
+ENV/
+
+# =========================
+# Secrets / local config
+# =========================
+.env
+.cdsapirc
+
+# =========================
+# Airflow local runtime files
+# =========================
+airflow.db
+airflow-webserver.pid
+logs/
+
+# =========================
+# Generated data / artifacts
+# Keep these on host volume, not inside Docker image
+# =========================
+data/
+outputs/
+reports/
+
+# =========================
+# Files not needed in runtime image
+# =========================
+notebooks/
+docs/
+
+# =========================
+# Archives / temporary files
+# =========================
+*.zip
+*.rar
+*.7z
+*.tar
+*.tar.gz
+*.tgz
+*.tmp
+*.bak
+*.log

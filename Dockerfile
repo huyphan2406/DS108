@@ -1,32 +1,28 @@
-FROM apache/airflow:3.2.1
+FROM python:3.11-slim
 
-USER root
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    DS108_PROJECT_ROOT=/app \
+    PYTHONPATH=/app
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        build-essential \
-        gcc \
-        g++ \
-        libgomp1 \
-        libeccodes-dev \
-        curl \
-    && apt-get autoremove -yqq --purge \
-    && apt-get clean \
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    gcc \
+    g++ \
+    libgomp1 \
+    libeccodes-dev \
     && rm -rf /var/lib/apt/lists/*
 
-USER airflow
+COPY requirements.txt /app/requirements.txt
 
-COPY requirements.txt /requirements.txt
+RUN pip install --upgrade pip \
+    && pip install -r /app/requirements.txt
 
-RUN pip install --no-cache-dir \
-    "apache-airflow==${AIRFLOW_VERSION}" \
-    -r /requirements.txt \
-    --constraint "${HOME}/constraints.txt"
+COPY . /app
 
-COPY --chown=airflow:root dags /opt/airflow/dags
-COPY --chown=airflow:root scripts /opt/airflow/project/scripts
+EXPOSE 8501
 
-WORKDIR /opt/airflow/project
-
-ENV PYTHONPATH=/opt/airflow/project
-ENV AIRFLOW__CORE__LOAD_EXAMPLES=False
+CMD ["streamlit", "run", "demo/app.py", "--server.address=0.0.0.0", "--server.port=8501"]
