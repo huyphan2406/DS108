@@ -434,7 +434,7 @@ pip install -r requirements.txt
 # Build và chạy toàn bộ hệ thống
 docker-compose up -d
 
-# Truy cập Airflow: http://localhost:8080
+# Truy cập Airflow: http://localhost:8081
 # Truy cập Streamlit: http://localhost:8501
 
 # Xem log
@@ -455,7 +455,7 @@ python src/_07_feature_engineering.py
 python src/_08_model.py
 
 # Hoặc chạy tất cả qua Airflow DAG
-# Truy cập http://localhost:8080 và kích hoạt DAG
+# Truy cập http://localhost:8081 và kích hoạt DAG
 ```
 
 ### **5. Phân Tích Dữ Liệu**
