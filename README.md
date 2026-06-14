@@ -68,11 +68,7 @@ DS108/
 │
 ├── 📂 notebooks/                     # Jupyter Notebooks phân tích
 │   ├── eda.ipynb                     # Phân tích dữ liệu khám phá (EDA)
-│   ├── feature_selection.ipynb       # Lựa chọn features quan trọng
-│   └── eda_figs.pkl                  # Các hình vẽ từ phân tích
-│
-├── 📂 results/                       # Kết quả mô hình
-│   └── model_comparison_results_improved.csv  # Kết quả so sánh các mô hình
+│   └── feature_selection.ipynb       # Lựa chọn features quan trọng
 │
 ├── 📂 src/                           # Mã nguồn Python - quy trình xử lý
 │   ├── _01_crawler.py                # Bước 1: Thu thập dữ liệu
@@ -90,11 +86,10 @@ DS108/
 ├── webserver_config.py              # Cấu hình Airflow webserver
 ├── .dockerignore                    # Các file loại bỏ khi build Docker
 ├── requirements.txt                 # Danh sách thư viện Python cần cài
-├── README.md                      # Tài liệu hướng dẫn chính
-├── LICENSE                        # Giấy phép dự án
-├── .env.example                   # Template biến môi trường
-├── .gitignore                     # Các file loại bỏ khỏi Git
-└── silver.ipynb                   # Notebook xử lý silver
+├── README.md                        # Tài liệu hướng dẫn chính
+├── LICENSE                          # Giấy phép dự án
+├── .env.example                     # Template biến môi trường
+└── .gitignore                       # Các file loại bỏ khỏi Git
 ```
 
 ---
