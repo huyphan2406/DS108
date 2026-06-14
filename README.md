@@ -158,7 +158,6 @@ Dữ liệu được tổ chức theo **3 giai đoạn** (Data Lakehouse archite
 | ------------------------- | -------------------------------------------------------------- |
 | `eda.ipynb`               | **Exploratory Data Analysis (EDA)** - Khám phá và hiểu dữ liệu |
 | `feature_selection.ipynb` | **Lựa chọn Features** - Chọn các features quan trọng nhất      |
-| `eda_figs.pkl`            | File lưu trữ các hình vẽ từ phân tích                          |
 
 **Mục tiêu:** Phân tích thống kê dữ liệu, tìm hiểu phân phối, mối tương quan, và xác định features quan trọng.
 
@@ -186,17 +185,7 @@ Dữ liệu được tổ chức theo **3 giai đoạn** (Data Lakehouse archite
 
 ---
 
-### 6️⃣ **Thư Mục `results/` - Kết Quả Mô Hình**
-
-**model_comparison_results_improved.csv:**
-
-- Bảng so sánh hiệu suất của baseline Persistence và các mô hình LightGBM
-- Chứa các chỉ số chính: MAE, RMSE, WAPE, R² và Bias
-- Giúp so sánh các mô hình theo từng tiêu chí đánh giá, không kết luận một mô hình tốt nhất tuyệt đối
-
----
-
-### 7️⃣ **Thư Mục `docs/` - Tài Liệu**
+### 6️⃣ **Thư Mục `docs/` - Tài Liệu**
 
 **Codebook.csv:**
 
