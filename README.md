@@ -1,6 +1,6 @@
-# 📊 THU THẬP VÀ TIỀN XỬ LÝ DỮ LIỆU KHÍ TƯỢNG ĐA NGUỒN CHO BÀI TOÁN DỰ BÁO LƯỢNG MƯA THEO NGÀY TẠI VIỆT NAM GIAI ĐOẠN 2015-2024
+# 📊 THU THẬP VÀ TIỀN XỬ LÝ DỮ LIỆU KHÍ TƯỢNG ĐA NGUỒN CHO BÀI TOÁN DỰ BÁO LƯỢNG MƯA HẰNG NGÀY TẠI VIỆT NAM GIAI ĐOẠN 2015-2024
 
-> Một hệ thống thu thập và tiền xử lý dữ liệu khí tượng đa nguồn tự động, phục vụ cho bài toán dự báo lượng mưa bao gồm thu thập dữ liệu, tiền xử lý dữ liệu, trích xuất đặc trưng và xây dựng hệ thống dự báo 2-stage. Ngoài ra, hệ thống được đóng gói Docker và minh họa bằng streamlit để phục vụ cho tái lập và phát triển sau này.
+> Một pipeline thu thập và tiền xử lý dữ liệu khí tượng đa nguồn, phục vụ bài toán dự báo lượng mưa hằng ngày tại Việt Nam. Dự án bao gồm các bước thu thập dữ liệu, làm sạch dữ liệu, tích hợp dữ liệu, trích xuất đặc trưng và benchmark mô hình dự báo mưa. Ngoài ra, hệ thống được đóng gói Docker, tự động hóa bằng Airflow và minh họa bằng Streamlit để phục vụ cho tái lập và phát triển sau này.
 
 ## GVHD:
 
@@ -22,13 +22,14 @@
 
 **Mục tiêu chính:**
 
-- Xây dựng hệ thống thu thập, xử lý và phân tích dữ liệu khí hậu
-- Dự báo lượng mưa theo ngày tại các khu vực Việt Nam
-- Xây dựng mô hình học máy để dự đoán lượng mưa
+- Xây dựng pipeline thu thập, xử lý và phân tích dữ liệu khí tượng
+- Tích hợp dữ liệu GSOD và ERA5 theo đơn vị station-day
+- Tạo bộ dữ liệu đặc trưng phục vụ bài toán dự báo lượng mưa hằng ngày
+- Benchmark dữ liệu bằng baseline Persistence và các mô hình LightGBM
 - Tự động hóa quy trình xử lý dữ liệu bằng Apache Airflow
-- Triển khai ứng dụng demo bằng Streamlit
+- Minh họa dữ liệu và kết quả thực nghiệm bằng Streamlit
 
-**Mục đích cuối cùng:** Tạo bộ dữ liệu đặc trưng (feature engineered data) và đánh giá hiệu suất mô hình dự báo mưa.
+**Mục đích cuối cùng:** Tạo bộ dữ liệu đặc trưng (feature engineered data) và đánh giá tín hiệu dữ liệu thông qua các mô hình benchmark dự báo lượng mưa.
 
 ---
 
@@ -83,14 +84,12 @@ DS108/
 │   ├── _07_feature_engineering.py    # Bước 7: Tạo đặc trưng
 │   └── _08_model.py                  # Bước 8: Huấn luyện và đánh giá mô hình
 │
-├── 🐳 Docker & Orchestration
-│   ├── docker-compose.yaml           # Cấu hình docker-compose (chạy Airflow + Streamlit)
-│   ├── Dockerfile                    # Build image cho Streamlit dashboard
-│   ├── Dockerfile.airflow            # Build image cho Apache Airflow
-│   ├── webserver_config.py           # Cấu hình Airflow webserver
-│   └── .dockerignore                 # Các file loại bỏ khi build Docker
-│
-├── requirements.txt               # Danh sách thư viện Python cần cài
+├── docker-compose.yaml              # Cấu hình docker-compose (chạy Airflow + Streamlit)
+├── Dockerfile                       # Build image cho Streamlit dashboard
+├── Dockerfile.airflow               # Build image cho Apache Airflow
+├── webserver_config.py              # Cấu hình Airflow webserver
+├── .dockerignore                    # Các file loại bỏ khi build Docker
+├── requirements.txt                 # Danh sách thư viện Python cần cài
 ├── README.md                      # Tài liệu hướng dẫn chính
 ├── LICENSE                        # Giấy phép dự án
 ├── .env.example                   # Template biến môi trường
@@ -127,13 +126,14 @@ Dữ liệu được tổ chức theo **3 giai đoạn** (Data Lakehouse archite
 
 #### **a) `data/raw/` - Dữ liệu Thô (Bronze Layer)**
 
-- **Era5 Pressure Level (2015-2024):** Dữ liệu ở các mức áp suất từ Copernicus ERA5
+- **ERA5 Pressure Level (2015-2024):** Dữ liệu ở các mức áp suất từ Copernicus ERA5
   - Các biến: Nhiệt độ, độ ẩm, độ cao địa thế, v.v. ở các mức áp suất khác nhau
   - Định dạng: GRIB (.grib) - định dạng dữ liệu khí hậu tiêu chuẩn
   - File index: `.idx` file để đánh chỉ mục GRIB
 
-- **Era5 Single Level (2015-2024):** Dữ liệu ở mặt đất
-  - Các biến: Lượng mưa, áp suất, nhiệt độ mặt đất, v.v.
+- **ERA5 Single Level (2015-2024):** Dữ liệu khí tượng bề mặt từ ERA5
+  - Các biến: nhiệt độ 2m, điểm sương 2m, áp suất bề mặt, áp suất mực biển, gió 10m, địa thế bề mặt, mặt nạ đất--biển, v.v.
+  - Lưu ý: biến tổng lượng mưa ERA5 không được dùng để thay thế hoặc bù cho biến mục tiêu PRCP từ GSOD.
   - Định dạng: GRIB
 
 - **GSOD (Global Summary of the Day):** Dữ liệu từ các trạm quan trắc trên mặt đất
@@ -185,8 +185,8 @@ Dữ liệu được tổ chức theo **3 giai đoạn** (Data Lakehouse archite
 **app.py:**
 
 - Ứng dụng web interactive xây dựng bằng Streamlit
-- Hiển thị kết quả dự báo mưa
-- Cho phép người dùng tương tác và xem kết quả
+- Minh họa dữ liệu, biểu đồ phân tích và kết quả thực nghiệm
+- Cho phép người dùng tương tác và xem kết quả benchmark
 - Chạy trong container Docker
 
 ---
@@ -195,9 +195,9 @@ Dữ liệu được tổ chức theo **3 giai đoạn** (Data Lakehouse archite
 
 **model_comparison_results_improved.csv:**
 
-- Bảng so sánh hiệu suất của các mô hình khác nhau
-- Chứa các chỉ số: Accuracy, Precision, Recall, F1-Score, RMSE, v.v.
-- Giúp đánh giá mô hình nào tốt nhất
+- Bảng so sánh hiệu suất của baseline Persistence và các mô hình LightGBM
+- Chứa các chỉ số chính: MAE, RMSE, WAPE, R² và Bias
+- Giúp so sánh các mô hình theo từng tiêu chí đánh giá, không kết luận một mô hình tốt nhất tuyệt đối
 
 ---
 
@@ -220,8 +220,9 @@ Dữ liệu được tổ chức theo **3 giai đoạn** (Data Lakehouse archite
 - Phân giải: 0.25° x 0.25° (khoảng 30km)
 - Khoảng thời gian: 2015-2024
 - Các biến:
-  - **Single Level:** Lượng mưa, áp suất, nhiệt độ 2m, độ ẩm, tốc độ gió, bức xạ, v.v.
-  - **Pressure Level:** Nhiệt độ, độ ẩm, độ cao địa thế, thành phần gió ở 2 mức áp suất là 500hPa và 850hPa.
+  - **Single Level:** nhiệt độ 2m, điểm sương 2m, áp suất bề mặt, áp suất mực biển, gió 10m, địa thế bề mặt, mặt nạ đất--biển, v.v.
+  - **Pressure Level:** nhiệt độ, độ ẩm riêng, độ cao địa thế vị, thành phần gió và vận tốc thẳng đứng ở hai mức áp suất 500 hPa và 850 hPa.
+- Lưu ý: ERA5 được dùng làm nguồn đặc trưng bổ sung; biến tổng lượng mưa ERA5 không được dùng để bù hoặc thay thế PRCP từ GSOD.
 
 ### 2. **GSOD (Global Summary of the Day)**
 
@@ -239,7 +240,7 @@ Dữ liệu được tổ chức theo **3 giai đoạn** (Data Lakehouse archite
 ```
 ┌─────────────────────────────────────────────┐
 │             NGUỒN DỮ LIỆU                   │
-│    ERA5 (CDS) | GSOD | Các API khác         │
+│        NOAA GSOD | ERA5 Single | ERA5 Press │
 └────────────────────┬────────────────────────┘
                      │
                      ▼
@@ -293,10 +294,10 @@ Dữ liệu được tổ chức theo **3 giai đoạn** (Data Lakehouse archite
                      │
                      ▼
       ┌─────────────────────────────────┐
-      │       KẾT QUẢ DỰ BÁO            │
-      │  - Model checkpoint             │
-      │  - Performance metrics          │
-      │  - Predictions                  │
+      │       KẾT QUẢ THỰC NGHIỆM       │
+      │  - Benchmark metrics            │
+      │  - Model comparison results     │
+      │  - Dashboard minh họa           │
       └─────────────────────────────────┘
 ```
 
@@ -502,8 +503,8 @@ streamlit run demo/app.py
 
 ## **Đóng Góp & Liên Hệ**
 
-Đây là dự án thực tế phục vụ đồ án Cuối kỳ. Mọi góp ý về hệ thống, vui lòng mở Issue trực tiếp trên kho lưu trữ.
+Đây là project học thuật phục vụ đồ án cuối kỳ môn DS108. Mọi góp ý về dữ liệu, pipeline hoặc tài liệu có thể được gửi thông qua Issue trên kho lưu trữ.
 
 **Cập nhật lần cuối:** 14/06/2026
 
-**Trạng thái:** ✅ Hoàn tất & Sẵn sàng Bảo vệ.
+**Trạng thái:** ✅ Hoàn tất cho mục tiêu đồ án học thuật và sẵn sàng bảo vệ.
