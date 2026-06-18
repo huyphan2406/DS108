@@ -482,4 +482,4 @@ streamlit run demo/app.py --server.port 8502
 
 **Cập nhật lần cuối:** 18/06/2026
 
-**Trạng thái:** ✅ Hoàn tất cho mục tiêu đồ án học thuật và sẵn sàng bảo vệ.
+**Trạng thái:** ✅ Hoàn thành mục tiêu đồ án học thuật và sẵn sàng cho bảo vệ.
