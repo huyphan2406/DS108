@@ -111,8 +111,6 @@ Chứa 8 bước xử lý dữ liệu theo tuần tự:
 | `_07_feature_engineering.py`   | 7    | Tạo các đặc trưng mới từ dữ liệu (feature engineering)            |
 | `_08_model.py`                 | 8    | Huấn luyện mô hình học máy và đánh giá                            |
 
-**Kỹ thuật xử lý:** Mỗi bước sử dụng thư viện Pandas, NumPy, xarray để xử lý dữ liệu khoa học.
-
 ---
 
 ### 2️⃣ **Thư Mục `data/` - Dữ Liệu Dự Án**
@@ -197,7 +195,14 @@ Dữ liệu được tổ chức theo **3 giai đoạn** (Data Lakehouse archite
 
 ## 📊 Nguồn Dữ Liệu
 
-### 1. **ERA5 (ECMWF Reanalysis v5)**
+### 1. **GSOD (Global Summary of the Day)**
+
+- Nguồn: NOAA National Centers for Environmental Information
+- Loại: Dữ liệu từ các trạm quan trắc trên mặt đất
+- Dữ liệu: Nhiệt độ, áp suất, lượng mưa, tốc độ gió từ các trạm
+- Bao phủ: Toàn cầu
+
+### 2. **ERA5 (ECMWF Reanalysis v5)**
 
 - Nguồn: Copernicus Climate Data Store (CDS)
 - Loại: Dữ liệu tái phân tích khí hậu toàn cầu
@@ -208,13 +213,6 @@ Dữ liệu được tổ chức theo **3 giai đoạn** (Data Lakehouse archite
   - **Pressure Level:** nhiệt độ, độ ẩm riêng, độ cao địa thế vị, thành phần gió và vận tốc thẳng đứng ở hai mức áp suất 500 hPa và 850 hPa.
 - Lưu ý: ERA5 được dùng làm nguồn đặc trưng bổ sung; biến tổng lượng mưa ERA5 không được dùng để bù hoặc thay thế PRCP từ GSOD.
 
-### 2. **GSOD (Global Summary of the Day)**
-
-- Nguồn: NOAA National Centers for Environmental Information
-- Loại: Dữ liệu từ các trạm quan trắc trên mặt đất
-- Dữ liệu: Nhiệt độ, áp suất, lượng mưa, tốc độ gió từ các trạm
-- Bao phủ: Toàn cầu
-
 ---
 
 ## 🔄 Quy Trình Xử Lý Dữ Liệu
@@ -223,66 +221,59 @@ Dữ liệu được tổ chức theo **3 giai đoạn** (Data Lakehouse archite
 
 ```
 ┌─────────────────────────────────────────────┐
-│             NGUỒN DỮ LIỆU                   │
-│        NOAA GSOD | ERA5 Single | ERA5 Press │
+│               DATA SOURCE                   │
+│   NOAA GSOD | ERA5 Single | ERA5 Pressure   │
 └────────────────────┬────────────────────────┘
                      │
                      ▼
       ┌─────────────────────────────────┐
-      │  01. DATA CRAWLING              │
-      │  - Tải dữ liệu từ API           │
-      │  - Lưu dữ liệu thô (raw)        │
+      │       01. DATA CRAWLING         │
+      │     - Tải dữ liệu từ API        │
+      │     - Lưu dữ liệu thô           │
       └──────────────┬──────────────────┘
                      │
          ┌───────────┴────────────┐
          ▼                        ▼
  ┌─────────────────┐   ┌──────────────────┐
  │ 02. SINGLE LEVEL│   │03. PRESSURE LEVEL│
- │ DATA CRAWLING   │   │ DATA CRAWLING    │
+ │  DATA CRAWLING  │   │  DATA CRAWLING   │
  └────────┬────────┘   └──────────┬───────┘
           │                       │
           └───────────────────────┘
                      │
                      ▼
       ┌─────────────────────────────────┐
-      │  04 & 05. DATA PROCESSING       │
-      │  - Làm sạch dữ liệu             │
-      │  - Xử lý giá trị thiếu          │
-      │  - Chuyển đổi định dạng         │
-      │  - Chuẩn hóa dữ liệu            │
+      │    04 & 05. DATA PROCESSING     │
+      │   - Làm sạch dữ liệu            │
+      │   - Xử lý giá trị thiếu         │
+      │   - Chuyển đổi định dạng        │
+      │   - Chuẩn hóa dữ liệu           │
       └──────────────┬──────────────────┘
                      │
                      ▼
       ┌─────────────────────────────────┐
-      │  06. MERGE TO SILVER            │
-      │  - Gộp tất cả nguồn dữ liệu     │
-      │  - Tạo dữ liệu chính (silver)   │
-      │  - Lưu silver_data.csv          │
+      │    06. MERGE TO SILVER          │
+      │   - Gộp tất cả nguồn dữ liệu    │
+      │   - Tạo dữ liệu chính           │
+      │   - Lưu silver_data.csv         │
       └──────────────┬──────────────────┘
                      │
                      ▼
       ┌─────────────────────────────────┐
-      │  07. FEATURE ENGINEERING        │
-      │  - Tạo các đặc trưng mới        │
-      │  - Tính toán các chỉ số         │
-      │  - Lựa chọn features            │
+      │    07. FEATURE ENGINEERING      │
+      │   - Tạo các đặc trưng mới       │
+      │   - Tính toán các chỉ số        │
+      │   - Lựa chọn features           │
       └──────────────┬──────────────────┘
                      │
                      ▼
       ┌─────────────────────────────────┐
-      │  08. MODEL TRAINING & EVAL      │
-      │  - Huấn luyện mô hình           │
-      │  - Đánh giá hiệu suất           │
-      │  - Lưu kết quả                  │
-      └──────────────┬──────────────────┘
-                     │
-                     ▼
-      ┌─────────────────────────────────┐
-      │       KẾT QUẢ THỰC NGHIỆM       │
-      │  - Benchmark metrics            │
-      │  - Model comparison results     │
-      │  - Dashboard minh họa           │
+      │    08. MODEL BENCHMARK          │
+      │   - Huấn luyện mô hình          │
+      │   - Đánh giá hiệu suất          │
+      │   - Lưu kết quả                 │
       └─────────────────────────────────┘
+      
 ```
 
 ---
@@ -489,6 +480,6 @@ streamlit run demo/app.py --server.port 8502
 
 Đây là project học thuật phục vụ đồ án cuối kỳ môn DS108. Mọi góp ý về dữ liệu, pipeline hoặc tài liệu có thể được gửi thông qua Issue trên kho lưu trữ.
 
-**Cập nhật lần cuối:** 14/06/2026
+**Cập nhật lần cuối:** 18/06/2026
 
 **Trạng thái:** ✅ Hoàn tất cho mục tiêu đồ án học thuật và sẵn sàng bảo vệ.
