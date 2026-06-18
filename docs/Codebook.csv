@@ -15,18 +15,18 @@
 14,v10,ERA5 single-level,ERA5 single-level,float,m/s,"[-9.5002, 4.8390]",Thành phần gió hướng bắc-nam ở độ cao 10 m.
 15,z,ERA5 single-level,ERA5 single-level,float,m,"[-1.6385, 91.2362]",Độ cao địa thế bề mặt sau khi chuyển đổi từ geopotential.
 16,lsm,ERA5 single-level,ERA5 single-level,float,unitless,"[0.4906, 0.9998]",Mặt nạ đất-biển tại ô lưới ERA5.
-17,z_500,ERA5 pressure-level,ERA5 pressure-level,float,m,"[5731.4820, 5923.1226]",Độ cao địa thế vị tại tầng 500 hPa.
-18,t_500,ERA5 pressure-level,ERA5 pressure-level,float,degC,"[-13.6822, 1.3491]",Nhiệt độ không khí tại tầng 500 hPa.
-19,q_500,ERA5 pressure-level,ERA5 pressure-level,float,kg/kg,"[0.0000, 0.0070]",Độ ẩm riêng tại tầng 500 hPa.
-20,u_500,ERA5 pressure-level,ERA5 pressure-level,float,m/s,"[-19.2024, 36.4140]",Thành phần gió hướng đông-tây tại tầng 500 hPa.
-21,v_500,ERA5 pressure-level,ERA5 pressure-level,float,m/s,"[-22.1789, 22.7363]",Thành phần gió hướng bắc-nam tại tầng 500 hPa.
-22,w_500,ERA5 pressure-level,ERA5 pressure-level,float,Pa/s,"[-2.9820, 0.5191]",Vận tốc thẳng đứng theo hệ tọa độ áp suất tại tầng 500 hPa.
-23,z_850,ERA5 pressure-level,ERA5 pressure-level,float,m,"[1354.1284, 1603.3254]",Độ cao địa thế vị tại tầng 850 hPa.
-24,t_850,ERA5 pressure-level,ERA5 pressure-level,float,degC,"[-4.5467, 27.4680]",Nhiệt độ không khí tại tầng 850 hPa.
-25,q_850,ERA5 pressure-level,ERA5 pressure-level,float,kg/kg,"[0.0008, 0.0168]",Độ ẩm riêng tại tầng 850 hPa.
-26,u_850,ERA5 pressure-level,ERA5 pressure-level,float,m/s,"[-22.7635, 21.6082]",Thành phần gió hướng đông-tây tại tầng 850 hPa.
-27,v_850,ERA5 pressure-level,ERA5 pressure-level,float,m/s,"[-23.7762, 13.8860]",Thành phần gió hướng bắc-nam tại tầng 850 hPa.
-28,w_850,ERA5 pressure-level,ERA5 pressure-level,float,Pa/s,"[-3.5330, 0.6822]",Vận tốc thẳng đứng theo hệ tọa độ áp suất tại tầng 850 hPa.
+17,z_500,ERA5 pressure-level,ERA5 pressure-level,float,m,"[5731.4820, 5923.1226]",Độ cao địa thế vị tại mực 500 hPa.
+18,t_500,ERA5 pressure-level,ERA5 pressure-level,float,degC,"[-13.6822, 1.3491]",Nhiệt độ không khí tại mực 500 hPa.
+19,q_500,ERA5 pressure-level,ERA5 pressure-level,float,kg/kg,"[0.0000, 0.0070]",Độ ẩm riêng tại mực 500 hPa.
+20,u_500,ERA5 pressure-level,ERA5 pressure-level,float,m/s,"[-19.2024, 36.4140]",Thành phần gió hướng đông-tây tại mực 500 hPa.
+21,v_500,ERA5 pressure-level,ERA5 pressure-level,float,m/s,"[-22.1789, 22.7363]",Thành phần gió hướng bắc-nam tại mực 500 hPa.
+22,w_500,ERA5 pressure-level,ERA5 pressure-level,float,Pa/s,"[-2.9820, 0.5191]",Vận tốc thẳng đứng theo hệ tọa độ áp suất tại mực 500 hPa.
+23,z_850,ERA5 pressure-level,ERA5 pressure-level,float,m,"[1354.1284, 1603.3254]",Độ cao địa thế vị tại mực 850 hPa.
+24,t_850,ERA5 pressure-level,ERA5 pressure-level,float,degC,"[-4.5467, 27.4680]",Nhiệt độ không khí tại mực 850 hPa.
+25,q_850,ERA5 pressure-level,ERA5 pressure-level,float,kg/kg,"[0.0008, 0.0168]",Độ ẩm riêng tại mực 850 hPa.
+26,u_850,ERA5 pressure-level,ERA5 pressure-level,float,m/s,"[-22.7635, 21.6082]",Thành phần gió hướng đông-tây tại mực 850 hPa.
+27,v_850,ERA5 pressure-level,ERA5 pressure-level,float,m/s,"[-23.7762, 13.8860]",Thành phần gió hướng bắc-nam tại mực 850 hPa.
+28,w_850,ERA5 pressure-level,ERA5 pressure-level,float,Pa/s,"[-3.5330, 0.6822]",Vận tốc thẳng đứng theo hệ tọa độ áp suất tại mực 850 hPa.
 29,day_sin,Temporal feature,Feature engineering,float,unitless,"[-1.0000, 1.0000]",Thành phần sin biểu diễn chu kỳ ngày trong năm.
 30,day_cos,Temporal feature,Feature engineering,float,unitless,"[-1.0000, 1.0000]",Thành phần cos biểu diễn chu kỳ ngày trong năm.
 31,month_sin,Temporal feature,Feature engineering,float,unitless,"[-1.0000, 1.0000]",Thành phần sin biểu diễn chu kỳ tháng trong năm.
@@ -37,13 +37,13 @@
 36,dew_point_depression,Derived meteorology,Feature engineering,float,degC,"[0.2222, 17.0556]","Độ hụt điểm sương, tính bằng TEMP - DEWP."
 37,du_850_500,Derived dynamics,Feature engineering,float,m/s,"[-38.6083, 18.6089]",Chênh lệch thành phần gió u giữa 850 hPa và 500 hPa.
 38,dv_850_500,Derived dynamics,Feature engineering,float,m/s,"[-28.8190, 20.7116]",Chênh lệch thành phần gió v giữa 850 hPa và 500 hPa.
-39,wind_shear_mag,Derived dynamics,Feature engineering,float,m/s,"[0.0291, 38.7904]",Độ lớn vector wind shear giữa tầng 850 hPa và 500 hPa.
+39,wind_shear_mag,Derived dynamics,Feature engineering,float,m/s,"[0.0291, 38.7904]",Độ lớn vector wind shear giữa mực 850 hPa và 500 hPa.
 40,du_dt_850,Temporal dynamics,Feature engineering,float,m/s/day,"[-17.6232, 16.2761]",Biến thiên ngày-kề-ngày của thành phần gió u tại 850 hPa.
 41,dv_dt_850,Temporal dynamics,Feature engineering,float,m/s/day,"[-17.8841, 29.2202]",Biến thiên ngày-kề-ngày của thành phần gió v tại 850 hPa.
-42,ageostrophic_signal,Derived dynamics,Feature engineering,float,m/s/day,"[0.0114, 29.2225]",Proxy tín hiệu động lực từ biến thiên gió tầng 850 hPa.
+42,ageostrophic_signal,Derived dynamics,Feature engineering,float,m/s/day,"[0.0114, 29.2225]",Proxy tín hiệu động lực từ biến thiên gió mực 850 hPa.
 43,thickness_500_850,Derived meteorology,Feature engineering,float,m,"[4203.8106, 4440.6194]",Độ dày khí quyển giữa 500 hPa và 850 hPa.
 44,elevation_diff,Spatial feature,Feature engineering,float,m,"[-82.2362, 6.8185]",Chênh lệch giữa độ cao lưới ERA5 và độ cao trạm.
-45,moisture_flux_850,Derived meteorology,Feature engineering,float,kg/kg * m/s,"[0.0003, 0.3160]","Thông lượng ẩm tầng 850 hPa, tính bằng q_850 nhân độ lớn gió tầng 850."
+45,moisture_flux_850,Derived meteorology,Feature engineering,float,kg/kg * m/s,"[0.0003, 0.3160]","Thông lượng ẩm mực 850 hPa, tính bằng q_850 nhân độ lớn gió mực 850."
 46,PRCP_impute,Intermediate / Proxy,Feature engineering,float,mm,"[0.0000, 159.0040]","Biến proxy/trung gian lưu giá trị thay thế cho PRCP tại các bản ghi PRCP bị thiếu; chỉ dùng để hỗ trợ tạo đặc trưng quá khứ như PRCP_lag_1, PRCP_lag_2, PRCP_past_3d_mean và PRCP_past_3d_sum, không thay thế PRCP gốc và không dùng làm target."
 47,PRCP_lag_1,Lag target-history feature,Feature engineering,float,mm,"[0.0000, 381.2540]",Giá trị PRCP của cùng trạm ở 1 ngày trước.
 48,PRCP_lag_2,Lag target-history feature,Feature engineering,float,mm,"[0.0000, 381.2540]",Giá trị PRCP của cùng trạm ở 2 ngày trước.
@@ -70,7 +70,7 @@
 69,DEWP_3d_mean,Rolling feature,Feature engineering,float,degC,"[0.8518, 27.8889]",Trung bình 3 ngày quá khứ của biến DEWP theo từng trạm.
 70,SLP_3d_mean,Rolling feature,Feature engineering,float,hPa,"[993.9000, 1033.4667]",Trung bình 3 ngày quá khứ của biến SLP theo từng trạm.
 71,VISIB_3d_mean,Rolling feature,Feature engineering,float,km,"[4.4525, 22.0480]",Trung bình 3 ngày quá khứ của biến VISIB theo từng trạm.
-72,moisture_flux_3d_sum,Rolling feature,Feature engineering,float,kg/kg * m/s,"[0.0089, 0.8168]",Tổng thông lượng ẩm tầng 850 hPa trong 3 ngày quá khứ.
+72,moisture_flux_3d_sum,Rolling feature,Feature engineering,float,kg/kg * m/s,"[0.0089, 0.8168]",Tổng thông lượng ẩm mực 850 hPa trong 3 ngày quá khứ.
 73,PRCP_past_3d_mean,Rolling target-history feature,Feature engineering,float,mm,"[0.0000, 251.4601]",Trung bình lượng mưa 3 ngày quá khứ của cùng trạm.
 74,PRCP_past_3d_sum,Rolling target-history feature,Feature engineering,float,mm,"[0.0000, 754.3801]",Tổng lượng mưa 3 ngày quá khứ của cùng trạm.
 75,target_1stage_prcp_mm,Target,Feature engineering,float,mm,"[0.0000, 381.2540]","Target cho mô hình LightGBM Tweedie một giai đoạn, bằng PRCP gốc từ GSOD."
