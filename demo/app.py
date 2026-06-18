@@ -125,7 +125,7 @@ def render_missing_file_message() -> None:
             "docker compose down --volumes --remove-orphans\n"
             "docker compose up --build\n\n"
             "# Sau đó mở Airflow và trigger DAG:\n"
-            "# http://localhost:8080\n"
+            "# http://localhost:8081\n"
             "# DAG: ds108_rainfall_pipeline",
             language="bash",
         )

@@ -420,7 +420,7 @@ pip install -r requirements.txt
 docker-compose up -d
 
 # Truy cập Airflow: http://localhost:8081
-# Truy cập Streamlit: http://localhost:8501
+# Truy cập Streamlit: http://localhost:8502
 
 # Xem log
 docker-compose logs -f
@@ -458,9 +458,9 @@ jupyter notebook notebooks/
 
 ```bash
 # Nếu chạy local
-streamlit run demo/app.py
+streamlit run demo/app.py --server.port 8502
 
-# Truy cập: http://localhost:8501
+# Truy cập: http://localhost:8502
 ```
 
 ## 🎓 Nguồn Tài Liệu Liên Quan

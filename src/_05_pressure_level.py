@@ -57,7 +57,6 @@ def _extract_pressure_levels(ds: xr.Dataset, level: int) -> xr.Dataset:
 def _sanity_check_pressure_levels(df: pd.DataFrame) -> None:
     """
     Kiểm tra vật lý cơ bản cho ERA5 pressure-level.
-    Không sửa dữ liệu, chỉ cảnh báo/lỗi n:contentReference[oaicite:0]{index=0}u.
     """
 
     if {"z_500", "z_850"}.issubset(df.columns):

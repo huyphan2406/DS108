@@ -59,7 +59,7 @@ def task_id(script: Path) -> str:
 
 
 def prepare_directories() -> None:
-    for folder in ["data/raw", "data/clean", "data/features", "outputs", "reports", "logs"]:
+    for folder in ["data/raw", "data/processed", "data/features", "outputs", "reports", "logs"]:
         path = PROJECT_ROOT / folder
         path.mkdir(parents=True, exist_ok=True)
         print(f"Prepared: {path}")

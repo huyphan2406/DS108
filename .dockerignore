@@ -36,8 +36,10 @@ ENV/
 # Airflow local runtime files
 # =========================
 airflow.db
+airflow.cfg
 airflow-webserver.pid
 logs/
+airflow_logs/
 
 # =========================
 # Generated data / artifacts
